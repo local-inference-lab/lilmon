@@ -40,6 +40,8 @@ A fast, good-looking terminal dashboard for <a href="https://github.com/vllm-pro
   ever sends GET requests to endpoints vLLM already exposes.
 - **Yours to style.** 14 themes (the default, `lil`, uses the Local Inference Lab brand colors), a
   background that works on transparent terminals, and live settings you can save back to the config file.
+- **A web UI on the way.** A browser version of the dashboard in the lab's brand is in preview; see
+  [Web UI](#web-ui-preview).
 
 ## Install
 
@@ -86,6 +88,32 @@ Press `?` inside lilmon for help, `s` for settings, and `t` to flip through them
 <summary><b>Live settings (the running config)</b></summary>
 <p align="center"><img src="docs/screenshots/settings.png" alt="The settings overlay" width="80%"></p>
 </details>
+
+## Web UI (preview)
+
+<p align="center"><img src="docs/screenshots/web.webp" alt="The lilmon web UI in the lil theme" width="100%"></p>
+
+`web/` holds a browser version of the dashboard in the Local Inference Lab brand. It has the same panels
+as the terminal app: decode and prefill with peaks, sessions and KV cache, MTP acceptance, latency
+percentiles, GPU and host telemetry, and recent requests. It comes in `lil`, `lil light`, `graphite` and
+`synthwave` themes and stacks down to phone width.
+
+It is a design preview. It replays recorded data from a real server and doesn't read a live one yet.
+
+```sh
+xdg-open web/index.html                               # no build step or server needed
+python3 -m http.server -d web 4173                    # or serve it, then open http://localhost:4173/
+```
+
+URL parameters set the starting state, for example `index.html?theme=lil-light&window=1h`.
+
+<details>
+<summary><b>Light theme and phone layout</b></summary>
+<p align="center"><img src="docs/screenshots/web-light-phone.webp" alt="The web UI in the lil light theme and at phone width" width="100%"></p>
+</details>
+
+Next up is live data: an opt-in `lilmon --serve` listener that serves this page and the numbers lilmon
+already computes. [`web/README.md`](web/README.md) covers the files, how to rebuild the page, and that plan.
 
 ## Panels
 

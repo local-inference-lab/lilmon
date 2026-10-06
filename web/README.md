@@ -29,10 +29,19 @@ Open `index.html` in a browser. No server or build step is needed. URL parameter
 | `canvas/project/{Light,Phone,Brand}.dc.html` | light theme, 390 px phone frame and brand sheet artboards |
 | `index.html` | standalone page generated from `Main.dc.html` by `build_standalone.py` |
 | `dc-shim.js` | renders the artboard markup outside the canvas runtime |
+| `sync_logos.py` | writes the generated logos (from `docs/brand/build_logos.py`) into the artboards and `favicon.svg` |
+| `favicon.svg` | the small-size cut of the mark |
 | `sample-data.js` | the recorded sample data |
 | `check_page.py` | Playwright check at 320 to 1440 px: overflow, h1, console errors, controls, tooltip, themes |
 
-Edit `canvas/project/Main.dc.html`, then run `python3 web/build_standalone.py`.
+Edit `canvas/project/Main.dc.html`, then rebuild the standalone page. After any logo change, sync the
+logos first:
+
+```sh
+python3 web/sync_logos.py          # only after editing docs/brand/build_logos.py
+python3 web/build_standalone.py
+uv run --no-project --with playwright python web/check_page.py /tmp/shots   # optional browser check
+```
 
 ## Wiring it to live data
 

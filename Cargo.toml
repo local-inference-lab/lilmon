@@ -11,7 +11,7 @@ homepage = "https://local-inference-lab.ai"
 readme = "README.md"
 keywords = ["vllm", "llm", "inference", "tui", "monitoring"]
 categories = ["command-line-utilities", "visualization"]
-exclude = ["docs/"]
+exclude = ["docs/", "web/"]
 
 [dependencies]
 anyhow = "1"
