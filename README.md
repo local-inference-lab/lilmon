@@ -59,6 +59,7 @@ lilmon                          # endpoints from ~/.config/lilmon/config.toml (c
 lilmon localhost:8000           # ad-hoc endpoint(s): host:port or a full /metrics URL
 lilmon 8001                     # a bare port means localhost
 VLLM_API_KEY=sk-... lilmon      # servers started with --api-key
+lilmon 8000 --litellm litellm.example.com   # add recent requests from a LiteLLM proxy
 lilmon --theme nord --bg none   # try a theme and keep the terminal's transparency
 lilmon --list-themes            # every theme with swatches and a description
 ```
@@ -238,7 +239,14 @@ api_key_env = "PROD_VLLM_KEY"
 
 If your vLLM servers sit behind a [LiteLLM](https://github.com/BerriAI/litellm) proxy, lilmon can show
 recent requests from its spend log. It polls `GET /spend/logs/v2` every `poll_s` seconds with a
-read-only key.
+read-only key. Point it at the proxy with `--litellm HOST` or `[litellm] url`. A bare host means
+https, `host:port` means http (LiteLLM itself serves plain HTTP on :4000), and full URLs are used as
+given.
+
+Each endpoint picks out its own rows. With `litellm_model_group` set, lilmon matches on the model
+group. Without it, lilmon matches rows whose `api_base` is that server's host and port, treating
+`localhost` and this machine's name as the same host. So `lilmon localhost:8000 --litellm proxy.example.com`
+works with no config at all.
 
 ```toml
 [litellm]
@@ -248,7 +256,7 @@ api_key_file = "~/.config/lilmon/litellm.key"   # or api_key, api_key_env, LITEL
 [[endpoint]]
 name = "prod"
 url = "http://inference-box:8000/metrics"
-litellm_model_group = "prod/%"   # trailing % or / matches a prefix; otherwise an exact model group
+litellm_model_group = "prod/%"   # optional; trailing % or / matches a prefix, otherwise exact
 ```
 
 Give lilmon its own key with the least access that works: a user with the `proxy_admin_viewer` role

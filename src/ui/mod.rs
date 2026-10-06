@@ -73,7 +73,7 @@ pub fn draw(f: &mut Frame, app: &App) {
     let wide = body.width >= 150;
     let gpu_on = app.show_gpu && app.gpu.enabled && (!app.gpu.samples.is_empty() || !app.gpu.unavailable);
     let host_on = app.show_host && app.host.enabled && !app.host.unavailable;
-    let req_on = app.show_req && app.litellm_on && app.ep().cfg.litellm_model_group.is_some();
+    let req_on = app.show_req && app.litellm_on;
     let ngpu = app.gpu.samples.len().max(1) as u16;
     let mid_h: u16 = 13;
     let sys_on = gpu_on || host_on;
@@ -1099,8 +1099,20 @@ fn host(f: &mut Frame, r: Rect, app: &App) {
 
 fn requests(f: &mut Frame, r: Rect, app: &App) {
     let ep = app.ep();
-    let pat = ep.cfg.litellm_model_group.clone().unwrap_or_default();
-    let mut right = vec![Span::styled(format!("LiteLLM {pat}"), theme::muted())];
+    // which LiteLLM host, and how this endpoint's rows are picked out of its spend log
+    let host = app
+        .cfg
+        .litellm
+        .as_ref()
+        .and_then(|l| l.url.as_deref())
+        .and_then(crate::litellm::host_port)
+        .map(|(h, p)| if p == 443 || p == 80 { h } else { format!("{h}:{p}") })
+        .unwrap_or_default();
+    let what = match &ep.cfg.litellm_model_group {
+        Some(p) => p.clone(),
+        None => crate::litellm::host_port(&ep.cfg.url).map(|(_, p)| format!("api_base :{p}")).unwrap_or_default(),
+    };
+    let mut right = vec![Span::styled(format!("LiteLLM {host} · {what}"), theme::muted())];
     if let Some(e) = &ep.ll_err {
         let short: String = e.chars().take(40).collect();
         right.push(Span::styled(format!(" · ✕ {short}"), Style::new().fg(th().crit)));

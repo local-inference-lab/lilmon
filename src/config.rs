@@ -278,6 +278,20 @@ pub fn normalize_url(u: &str) -> String {
     s
 }
 
+/// A LiteLLM proxy address: full URLs pass through; a bare host means https (a reverse proxy), while
+/// an explicit port or a local host means http (LiteLLM itself serves plain HTTP, usually on :4000).
+pub fn normalize_base_url(u: &str) -> String {
+    let s = u.trim().trim_end_matches('/');
+    if s.starts_with("http://") || s.starts_with("https://") {
+        return s.to_string();
+    }
+    let host = s.split('/').next().unwrap_or(s);
+    let bare = host.rsplit_once(':').map_or(host, |(h, p)| if p.chars().all(|c| c.is_ascii_digit()) { h } else { host });
+    let local = matches!(bare, "localhost" | "127.0.0.1" | "[::1]" | "0.0.0.0");
+    let scheme = if local || bare != host { "http" } else { "https" };
+    format!("{scheme}://{s}")
+}
+
 pub fn name_from_url(u: &str) -> String {
     let s = u.split("://").nth(1).unwrap_or(u);
     s.split('/').next().unwrap_or(s).to_string()
@@ -364,7 +378,7 @@ fn render_opts(c: &Config, redact: bool) -> String {
     let _ = writeln!(o, "# Per-request rows from a LiteLLM proxy's spend log, read from GET /spend/logs/v2. Use a");
     let _ = writeln!(o, "# read-only key: a user with the proxy_admin_viewer role, ideally limited to that route with");
     let _ = writeln!(o, "# allowed_routes. Key lookup: api_key, api_key_file, the variable in api_key_env, then");
-    let _ = writeln!(o, "# LITELLM_API_KEY. Each endpoint opts in with litellm_model_group.");
+    let _ = writeln!(o, "# LITELLM_API_KEY. `url` may be a bare host (https), host:port (http) or a full URL.");
     match &c.litellm {
         Some(l) => {
             let _ = writeln!(o, "[litellm]");
@@ -414,7 +428,8 @@ fn render_opts(c: &Config, redact: bool) -> String {
     let _ = writeln!(o, "# One [[endpoint]] block per vLLM server; `url` may be host:port or a full /metrics URL.");
     let _ = writeln!(o, "#   spec_k_set           draft lengths when k varies by batch size, e.g. [3, 5], for exact");
     let _ = writeln!(o, "#                        per-position MTP acceptance");
-    let _ = writeln!(o, "#   litellm_model_group  SQL LIKE pattern on LiteLLM_SpendLogs.model_group for request rows");
+    let _ = writeln!(o, "#   litellm_model_group  LiteLLM model group for request rows (a trailing % or / matches a");
+    let _ = writeln!(o, "#                        prefix); without it, rows whose api_base is this server are used");
     let _ = writeln!(o, "#   api_key              the server's --api-key, sent as a Bearer token (this file is then");
     let _ = writeln!(o, "#                        written owner-only)");
     let _ = writeln!(o, "#   api_key_env          name of an environment variable holding the key instead");
@@ -577,6 +592,15 @@ mod tests {
         assert_eq!(c.window(), "1h");
         let c = parse("window = \"1h\"\n[ui]\nwindow = \"15m\"\n").unwrap();
         assert_eq!(c.window(), "15m");
+    }
+
+    #[test]
+    fn litellm_base_urls() {
+        assert_eq!(normalize_base_url("litellm.example.com"), "https://litellm.example.com");
+        assert_eq!(normalize_base_url("litellm.example.com/"), "https://litellm.example.com");
+        assert_eq!(normalize_base_url("stinger:4000"), "http://stinger:4000");
+        assert_eq!(normalize_base_url("localhost"), "http://localhost");
+        assert_eq!(normalize_base_url("https://x.example.com:8443/"), "https://x.example.com:8443");
     }
 
     #[test]

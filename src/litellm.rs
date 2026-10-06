@@ -19,6 +19,7 @@ pub struct Row {
     pub status: String,
     pub client: String,
     pub model_group: String,
+    pub api_base: String,
 }
 
 impl Row {
@@ -51,6 +52,8 @@ struct ApiRow {
     status: Option<String>,
     #[serde(default)]
     model_group: Option<String>,
+    #[serde(default)]
+    api_base: Option<String>,
     #[serde(default)]
     end_user: Option<String>,
     #[serde(default)]
@@ -92,6 +95,7 @@ impl ApiRow {
             status: self.status.unwrap_or_default(),
             client,
             model_group: self.model_group.unwrap_or_default(),
+            api_base: self.api_base.unwrap_or_default(),
         })
     }
 }
@@ -161,18 +165,58 @@ fn enc(s: &str) -> String {
         .collect()
 }
 
-/// An endpoint's `litellm_model_group`: a trailing `%` or `/` makes it a prefix (models get
-/// swapped behind a stable prefix like `gracie/`); otherwise it is an exact model group.
-fn matches(pattern: &str, group: &str) -> bool {
-    let p = pattern.trim_end_matches('%');
-    if pattern.ends_with('%') || pattern.ends_with('/') { group.starts_with(p) } else { group == p }
+/// Which spend-log rows belong to an endpoint.
+#[derive(Clone, Debug)]
+pub enum Target {
+    /// `litellm_model_group`: a trailing `%` or `/` makes it a prefix (models get swapped behind a stable
+    /// prefix like `gracie/`); otherwise it is an exact model group.
+    Group(String),
+    /// No model group configured: rows whose `api_base` points at the endpoint's host and port.
+    Server { host: String, port: u16 },
+}
+
+/// (host, port) of a URL, with the scheme's default port.
+pub fn host_port(url: &str) -> Option<(String, u16)> {
+    let (scheme, rest) = url.split_once("://").unwrap_or(("http", url));
+    let authority = rest.split('/').next()?;
+    let (host, port) = match authority.rsplit_once(':') {
+        Some((h, p)) if p.chars().all(|c| c.is_ascii_digit()) && !p.is_empty() => (h, p.parse().ok()?),
+        _ => (authority, if scheme == "https" { 443 } else { 80 }),
+    };
+    Some((host.trim_matches(['[', ']']).to_ascii_lowercase(), port))
+}
+
+fn this_host() -> &'static str {
+    use std::sync::OnceLock;
+    static H: OnceLock<String> = OnceLock::new();
+    H.get_or_init(|| std::fs::read_to_string("/proc/sys/kernel/hostname").map(|s| s.trim().to_ascii_lowercase()).unwrap_or_default())
+}
+
+/// localhost, loopback addresses, and this machine's own name all mean "here".
+fn is_local(h: &str) -> bool {
+    let me = this_host();
+    matches!(h, "localhost" | "127.0.0.1" | "::1" | "0.0.0.0")
+        || (!me.is_empty() && (h == me || h.split('.').next() == me.split('.').next()))
+}
+
+impl Target {
+    fn matches(&self, row: &Row) -> bool {
+        match self {
+            Target::Group(pattern) => {
+                let p = pattern.trim_end_matches('%');
+                if pattern.ends_with('%') || pattern.ends_with('/') { row.model_group.starts_with(p) } else { row.model_group == p }
+            }
+            Target::Server { host, port } => host_port(&row.api_base)
+                .is_some_and(|(h, p)| p == *port && (h == *host || (is_local(&h) && is_local(host)))),
+        }
+    }
 }
 
 const LOOKBACK_S: f64 = 6.0 * 3600.0;
 const ROWS: usize = 60;
 
-/// `targets`: (endpoint index, model group pattern).
-pub fn spawn(tx: Sender<crate::Msg>, base: String, key: Option<String>, poll: Duration, targets: Vec<(usize, String)>) {
+/// `targets`: (endpoint index, which rows are its own).
+pub fn spawn(tx: Sender<crate::Msg>, base: String, key: Option<String>, poll: Duration, targets: Vec<(usize, Target)>) {
     if targets.is_empty() {
         return;
     }
@@ -187,7 +231,7 @@ pub fn spawn(tx: Sender<crate::Msg>, base: String, key: Option<String>, poll: Du
             let base = base.trim_end_matches('/').to_string();
             // One exact pattern can be filtered server-side; prefixes are filtered here.
             let exact = match targets.as_slice() {
-                [(_, p)] if !p.ends_with('%') && !p.ends_with('/') => Some(p.clone()),
+                [(_, Target::Group(p))] if !p.ends_with('%') && !p.ends_with('/') => Some(p.clone()),
                 _ => None,
             };
             let mut backoff = Duration::from_secs(2);
@@ -226,7 +270,7 @@ pub fn spawn(tx: Sender<crate::Msg>, base: String, key: Option<String>, poll: Du
                     Ok(rows) => {
                         backoff = Duration::from_secs(2);
                         for (ep, pat) in &targets {
-                            let mine: Vec<Row> = rows.iter().filter(|r| matches(pat, &r.model_group)).take(ROWS).cloned().collect();
+                            let mine: Vec<Row> = rows.iter().filter(|r| pat.matches(r)).take(ROWS).cloned().collect();
                             if tx.send(crate::Msg::LiteLlm(*ep, mine, crate::state::now())).is_err() {
                                 return;
                             }
@@ -261,13 +305,45 @@ mod tests {
         assert_eq!(fmt_utc(0.0), "1970-01-01 00:00:00");
     }
 
+    fn row(group: &str, base: &str) -> Row {
+        Row {
+            start: 0.0,
+            first: None,
+            end: 0.0,
+            prompt: 0,
+            completion: 0,
+            status: String::new(),
+            client: String::new(),
+            model_group: group.into(),
+            api_base: base.into(),
+        }
+    }
+
     #[test]
     fn model_group_patterns() {
-        assert!(matches("gracie/%", "gracie/dsv41-flash-uva"));
-        assert!(matches("gracie/", "gracie/qwen38"));
-        assert!(!matches("gracie/%", "maxwell/qwen3-8b"));
-        assert!(matches("gracie/dsv41", "gracie/dsv41"));
-        assert!(!matches("gracie/dsv41", "gracie/dsv41-flash-uva"));
+        let g = |p: &str| Target::Group(p.into());
+        assert!(g("gracie/%").matches(&row("gracie/dsv41-flash-uva", "")));
+        assert!(g("gracie/").matches(&row("gracie/qwen38", "")));
+        assert!(!g("gracie/%").matches(&row("maxwell/qwen3-8b", "")));
+        assert!(g("gracie/dsv41").matches(&row("gracie/dsv41", "")));
+        assert!(!g("gracie/dsv41").matches(&row("gracie/dsv41-flash-uva", "")));
+    }
+
+    #[test]
+    fn server_matching_by_api_base() {
+        let t = |u: &str| {
+            let (host, port) = host_port(u).unwrap();
+            Target::Server { host, port }
+        };
+        assert!(t("http://inference-box:8000/metrics").matches(&row("", "http://inference-box:8000/v1")));
+        assert!(!t("http://inference-box:8000/metrics").matches(&row("", "http://inference-box:8001/v1")));
+        assert!(!t("http://inference-box:8000/metrics").matches(&row("", "http://other:8000/v1")));
+        // localhost on this machine is the same server LiteLLM reaches by this machine's name
+        let me = this_host().to_string();
+        if !me.is_empty() {
+            assert!(t("http://localhost:30006/metrics").matches(&row("", &format!("http://{me}:30006/v1"))));
+        }
+        assert_eq!(host_port("https://x.example.com/v1"), Some(("x.example.com".into(), 443)));
     }
 
     #[test]

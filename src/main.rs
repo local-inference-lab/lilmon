@@ -38,6 +38,9 @@ struct Cli {
     /// Scrape interval in milliseconds
     #[arg(short, long)]
     interval: Option<u64>,
+    /// LiteLLM proxy for the requests panel: host (https), host:port (http) or a full URL
+    #[arg(long, value_name = "HOST")]
+    litellm: Option<String>,
     /// Color theme (see --list-themes)
     #[arg(short, long)]
     theme: Option<String>,
@@ -589,6 +592,9 @@ fn normalize(cfg: &mut Config) {
     for e in &mut cfg.endpoints {
         e.url = config::normalize_url(&e.url);
     }
+    if let Some(u) = cfg.litellm.as_mut().and_then(|l| l.url.as_mut()) {
+        *u = config::normalize_base_url(u);
+    }
 }
 
 /// The file's config plus command-line overrides. Returns (file config, effective config, path, exists).
@@ -598,6 +604,22 @@ fn effective_config(cli: &Cli) -> Result<(Config, Config, PathBuf, bool)> {
     let mut cfg = file_cfg.clone();
     if let Some(ms) = cli.interval {
         cfg.interval_ms = ms;
+    }
+    if let Some(h) = &cli.litellm {
+        let url = Some(config::normalize_base_url(h));
+        match cfg.litellm.as_mut() {
+            Some(l) => l.url = url,
+            None => {
+                cfg.litellm = Some(config::LiteLlmConfig {
+                    url,
+                    api_key: None,
+                    api_key_file: None,
+                    api_key_env: None,
+                    poll_s: 5.0,
+                    command: None,
+                })
+            }
+        }
     }
     if let Some(t) = &cli.theme {
         let i = theme::find(t).ok_or_else(|| {
@@ -681,9 +703,8 @@ fn build_app(cli: &Cli, file_cfg: &Config, cfg: Config, path: PathBuf) -> Result
         std::fs::read_to_string(sdir.join("records.json")).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
     };
     let win = WINDOWS.iter().position(|w| w.1 == cfg.window()).unwrap_or(1);
-    let litellm_on = !cli.no_litellm
-        && cfg.litellm.as_ref().is_some_and(|l| l.url.is_some())
-        && cfg.endpoints.iter().any(|e| e.litellm_model_group.is_some());
+    // Endpoints without a model group match LiteLLM rows by api_base, so any endpoint qualifies.
+    let litellm_on = !cli.no_litellm && cfg.litellm.as_ref().is_some_and(|l| l.url.is_some()) && !cfg.endpoints.is_empty();
     if cfg.litellm.as_ref().is_some_and(|l| l.url.is_none() && l.command.is_some()) {
         startup_note = Some(
             "LiteLLM now reads the spend log over its API: set [litellm] url and a read-only key (the psql command is ignored)".into(),
@@ -873,7 +894,16 @@ fn start_sources(app: &App, tx: &Sender<Msg>) {
                 .eps
                 .iter()
                 .enumerate()
-                .filter_map(|(i, e)| e.cfg.litellm_model_group.clone().map(|p| (i, p)))
+                .filter_map(|(i, e)| {
+                    let target = match &e.cfg.litellm_model_group {
+                        Some(p) => litellm::Target::Group(p.clone()),
+                        None => {
+                            let (host, port) = litellm::host_port(&e.cfg.url)?;
+                            litellm::Target::Server { host, port }
+                        }
+                    };
+                    Some((i, target))
+                })
                 .collect();
             if let Some(url) = l.url.clone() {
                 // resolved here, at spawn time, so the key never enters the running config
