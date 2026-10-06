@@ -1,6 +1,11 @@
 <div align="center">
 
-<h1>lilmon <code>[L|L]</code></h1>
+<h1>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/brand/lilmon-logo-dark.svg">
+  <img src="docs/brand/lilmon-logo-light.svg" alt="lilmon" width="320">
+</picture>
+</h1>
 
 <p><b>The Local Inference Lab monitor</b><br>
 A fast, good-looking terminal dashboard for <a href="https://github.com/vllm-project/vllm">vLLM</a> servers.</p>

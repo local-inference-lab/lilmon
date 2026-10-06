@@ -149,7 +149,7 @@ pub static THEMES: [Theme; 14] = [
         border: 0x323233, grid: 0x212121, track: 0x212121, tab: 0x323233,
         status: [0x0ca30c, 0xfab219, 0xec835a, 0xd03b3b],
         // decode, prefill and MTP use the exact --blue, --violet and --cyan accents; the remaining
-        // series have no brand token and use the validated set from docs/brand/BRAND_NOTES.md
+        // series have no brand token and use a set validated for colorblind separation on --bg
         series: [0x3f6fff, 0x7928ff, 0x18c8e9, 0xc98500, 0xd95926, 0xd4508f, 0x3a9a4a, 0x7a7fd9],
     }),
     build(Spec {
