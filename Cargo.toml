@@ -1,0 +1,32 @@
+[package]
+name = "lilmon"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "lilmon, the Local Inference Lab monitor: a terminal dashboard for vLLM servers"
+authors = ["Local Inference Lab, Inc."]
+license = "Apache-2.0"
+repository = "https://github.com/local-inference-lab/lilmon"
+homepage = "https://local-inference-lab.ai"
+readme = "README.md"
+keywords = ["vllm", "llm", "inference", "tui", "monitoring"]
+categories = ["command-line-utilities", "visualization"]
+exclude = ["docs/"]
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4.6", features = ["derive"] }
+dirs = "7"
+nvml-wrapper = "0.13"
+ratatui = "0.30"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "1"
+ureq = { version = "3.4", default-features = false }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 4
+strip = true
+panic = "unwind"
