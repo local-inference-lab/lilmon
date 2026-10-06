@@ -267,7 +267,7 @@ fn draw_footer(f: &mut Frame, r: Rect, app: &App) {
 /// absolute time (bin = sec / spc), and each bin spans a whole number of columns, so as time advances
 /// the data scrolls left by whole bins instead of being re-binned (which made shapes shimmer).
 /// The drawn span is therefore the window rounded to fit the width, not exactly the window.
-struct Timeline {
+pub(crate) struct Timeline {
     spc: i64,
     cpb: u16,
     nbins: usize,
@@ -277,7 +277,7 @@ struct Timeline {
 }
 
 impl Timeline {
-    fn new(win: i64, width: u16, end_sec: i64) -> Timeline {
+    pub(crate) fn new(win: i64, width: u16, end_sec: i64) -> Timeline {
         let w = width.max(1) as i64;
         let (spc, cpb) = if win >= w {
             (((win as f64 / w as f64).round() as i64).max(1), 1)
@@ -302,7 +302,7 @@ impl Timeline {
         self.width - self.nbins as u16 * self.cpb
     }
 
-    fn columns<T: Copy + Default>(&self, mut f: impl FnMut(i64, i64) -> T) -> Vec<T> {
+    pub(crate) fn columns<T: Copy + Default>(&self, mut f: impl FnMut(i64, i64) -> T) -> Vec<T> {
         let mut out = vec![T::default(); self.x_offset() as usize];
         for i in 0..self.nbins {
             let (a, b) = self.bin_secs(i);
@@ -324,8 +324,7 @@ impl Timeline {
 }
 
 /// Mean and max of a bucket field per bin.
-fn series_columns(app: &App, field: Field, tl: &Timeline) -> Vec<Col> {
-    let st = &app.ep().st;
+pub(crate) fn series_columns(st: &crate::state::EndpointState, field: Field, tl: &Timeline) -> Vec<Col> {
     tl.columns(|a, b| {
         let mut c = Col::default();
         let (mut sum, mut n) = (0.0f64, 0u32);
@@ -372,7 +371,7 @@ fn chart(buf: &mut Buffer, r: Rect, app: &App, field: Field, ramp: &Ramp, min_ym
     }
     let plot = Rect::new(r.x + gutter, r.y, r.width - gutter - 1, r.height - 1);
     let tl = Timeline::new(win, plot.width, app.ep().st.complete_sec());
-    let cols = series_columns(app, field, &tl);
+    let cols = series_columns(&app.ep().st, field, &tl);
     let peak = cols.iter().map(|c| c.max).fold(0.0f32, f32::max);
     let ymax = nice_ceil((peak as f64 * 1.08).max(min_ymax));
 
@@ -648,7 +647,7 @@ fn sessions(f: &mut Frame, r: Rect, app: &App) {
     if y < inner.bottom() {
         let sw = w.saturating_sub(11);
         let tl = Timeline::new(win, sw, st.complete_sec());
-        let cols = series_columns(app, Field::Running, &tl);
+        let cols = series_columns(&app.ep().st, Field::Running, &tl);
         let mx = cols.iter().map(|c| c.max).fold(1.0f32, f32::max);
         let vals: Vec<Option<f32>> = cols.iter().map(|c| c.seen.then_some(c.max)).collect();
         put(buf, x0, y, 11, vec![Span::styled("concurrency", theme::muted())]);
@@ -915,7 +914,7 @@ fn gpu(f: &mut Frame, r: Rect, app: &App) {
 }
 
 /// Per-second (unix second, value) history in time order, binned like the throughput charts.
-fn hist_columns(h: &std::collections::VecDeque<(i64, f32)>, tl: &Timeline) -> Vec<Col> {
+pub(crate) fn hist_columns(h: &std::collections::VecDeque<(i64, f32)>, tl: &Timeline) -> Vec<Col> {
     tl.columns(|a, b| {
         let lo = h.partition_point(|&(s, _)| s < a);
         let mut c = Col::default();

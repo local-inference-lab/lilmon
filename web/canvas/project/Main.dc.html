@@ -35,6 +35,10 @@ a{color:var(--ink-soft);text-decoration:none}a:hover{color:var(--ink)}
 .live{display:inline-flex;align-items:center;gap:9px;font-family:var(--mono);font-size:12px;color:var(--ink-soft)}
 .dot{width:7px;height:7px;border-radius:50%;background:var(--cyan);box-shadow:0 0 0 5px var(--cyan-a),0 0 14px var(--cyan-b);animation:pulse 2.8s ease-in-out infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
+.dot.k-live{background:var(--good);box-shadow:0 0 0 5px color-mix(in srgb,var(--good) 16%,transparent),0 0 14px color-mix(in srgb,var(--good) 55%,transparent)}
+.dot.k-stale{background:var(--warn);box-shadow:none;animation:none}
+.dot.k-down,.dot.k-auth{background:var(--crit);box-shadow:none;animation:none}
+.dot.k-connecting,.dot.k-offline{background:var(--muted);box-shadow:none;animation:none}
 .spacer{flex:1 1 0;min-width:0}
 .controls{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
 .seg{display:flex;flex-wrap:wrap;padding:3px;gap:2px;border:1px solid var(--line);border-radius:999px}
@@ -139,8 +143,8 @@ a{color:var(--ink-soft);text-decoration:none}a:hover{color:var(--ink)}
 </sc-for>
 </nav>
 <div class="meta">
-<b>{{model}}</b><span class="sep" aria-hidden="true">·</span><span>1M ctx</span><span class="sep" aria-hidden="true">·</span><span>nvfp4_ds_mla KV</span><span class="sep" aria-hidden="true">·</span><span>3.42M tok</span><span class="sep" aria-hidden="true">·</span><span>up {{uptime}}</span>
-<span class="live" role="status" aria-live="polite"><span class="dot" aria-hidden="true"></span>{{statusText}}</span>
+<b>{{model}}</b><sc-for list="{{meta}}" as="m" hint-placeholder-count="4"><span class="sep" aria-hidden="true">·</span><span>{{m}}</span></sc-for>
+<span class="live" role="status" aria-live="polite"><span class="dot k-{{statusKind}}" aria-hidden="true"></span>{{statusText}}</span>
 </div>
 <div class="spacer"></div>
 <div class="controls">
@@ -158,12 +162,23 @@ a{color:var(--ink-soft);text-decoration:none}a:hover{color:var(--ink)}
 </div>
 </header>
 
-<sc-if value="{{connecting}}" hint-placeholder-val="{{ false }}">
+<sc-if value="{{offline}}" hint-placeholder-val="{{ false }}">
 <main class="frame" aria-live="polite">
 <section class="cell w12"><div class="empty">
-<span class="tag"><span class="dot" aria-hidden="true"></span>Connecting</span>
-<h2>Waiting for localhost:8000</h2>
-<p class="mono" style="margin: 0; font-size: 12.5px; color: var(--muted)">lilmon retries http://localhost:8000/metrics every 500 ms. Panels fill in after the first scrape.</p>
+<span class="tag"><span class="dot k-offline" aria-hidden="true"></span>Not connected</span>
+<h2>Start lilmon with --serve</h2>
+<p style="margin: 0; max-width: 64ch; font-size: 15px; line-height: 1.6; color: var(--ink-soft)">This page shows live data from lilmon. Run <code class="mono" style="color: var(--ink)">lilmon --serve</code> on the machine that monitors your vLLM servers, then open <code class="mono" style="color: var(--ink)">http://127.0.0.1:7878/</code> in a browser.</p>
+<p class="mono" style="margin: 0; font-size: 12px; color: var(--faint)">{{offlineDetail}}</p>
+</div></section>
+</main>
+</sc-if>
+
+<sc-if value="{{waiting}}" hint-placeholder-val="{{ false }}">
+<main class="frame" aria-live="polite">
+<section class="cell w12"><div class="empty">
+<span class="tag"><span class="dot k-{{statusKind}}" aria-hidden="true"></span>{{waitTag}}</span>
+<h2>Waiting for {{waitHost}}</h2>
+<p class="mono" style="margin: 0; font-size: 12.5px; color: var(--muted)">{{waitText}}</p>
 </div></section>
 </main>
 </sc-if>
@@ -176,7 +191,7 @@ a{color:var(--ink-soft);text-decoration:none}a:hover{color:var(--ink)}
 <div class="hero">
 <div class="big"><span class="v">{{dec.now}}</span><span class="x">{{dec.suffix}}</span><span class="u">tok/s now</span></div>
 <div class="kv"><sc-for list="{{dec.peaks}}" as="p" hint-placeholder-count="3"><span class="k">peak {{p.label}}</span><span class="v2">{{p.value}}</span></sc-for></div>
-<div class="kv"><span class="k">avg {{windowLabel}}</span><span class="v2">{{dec.avg}}</span><span class="k">per request</span><span class="v2">112 tok/s</span><span class="k">per sequence</span><span class="v2">{{dec.perSeq}}</span></div>
+<div class="kv"><span class="k">avg {{windowLabel}}</span><span class="v2">{{dec.avg}}</span><span class="k">per request</span><span class="v2">{{dec.perReq}}</span><span class="k">per sequence</span><span class="v2">{{dec.perSeq}}</span></div>
 </div>
 <div class="chart" style="--plot-h: 200px">
 <div class="ya" aria-hidden="true"><span>{{dec.c.ymax}}</span><span>{{dec.c.ymid}}</span><span>0</span></div>
@@ -199,8 +214,8 @@ a{color:var(--ink-soft);text-decoration:none}a:hover{color:var(--ink)}
 <div class="hero">
 <div class="big"><span class="v">{{pre.now}}</span><span class="x">{{pre.suffix}}</span><span class="u">tok/s now</span></div>
 <div class="kv"><sc-for list="{{pre.peaks}}" as="p" hint-placeholder-count="3"><span class="k">peak {{p.label}}</span><span class="v2">{{p.value}}</span></sc-for></div>
-<div class="kv"><span class="k">avg {{windowLabel}}</span><span class="v2">{{pre.avg}}</span><span class="k">cached</span><span class="v2">{{pre.cached}} · 57.8% hit</span><span class="k">last prefill</span><span class="v2">{{pre.lastText}}</span></div>
-<sc-if value="{{pre.prefilling}}" hint-placeholder-val="{{ false }}"><span class="tag"><span style="color: var(--prefill)" aria-hidden="true">▶</span>Prefilling 1 · {{pre.inflight}}</span></sc-if>
+<div class="kv"><span class="k">avg {{windowLabel}}</span><span class="v2">{{pre.avg}}</span><span class="k">cached</span><span class="v2">{{pre.cached}}</span><span class="k">last prefill</span><span class="v2">{{pre.lastText}}</span></div>
+<sc-if value="{{pre.prefilling}}" hint-placeholder-val="{{ false }}"><span class="tag"><span style="color: var(--prefill)" aria-hidden="true">▶</span>Prefilling {{pre.inflightN}} · {{pre.inflight}}</span></sc-if>
 </div>
 <div class="chart" style="--plot-h: 200px">
 <div class="ya" aria-hidden="true"><span>{{pre.c.ymax}}</span><span>{{pre.c.ymid}}</span><span>0</span></div>
@@ -222,19 +237,19 @@ a{color:var(--ink-soft);text-decoration:none}a:hover{color:var(--ink)}
 <div class="hd"><h2 id="h-ses"><span class="num" aria-hidden="true">03 /</span><span class="key ol-kv" style="background: var(--kv)" aria-hidden="true"></span>Sessions</h2><span class="aside">{{windowLabel}}</span></div>
 <div class="hero">
 <div class="big"><span class="v">{{ses.running}}</span><span class="u">running</span></div>
-<div class="kv"><span class="k">waiting</span><span class="v2">0</span><span class="k">prefill</span><span class="v2">{{ses.prefill}}</span><span class="k">decode</span><span class="v2">{{ses.decode}}</span></div>
+<div class="kv"><span class="k">waiting</span><span class="v2">{{ses.waiting}}</span><span class="k">prefill</span><span class="v2">{{ses.prefill}}</span><span class="k">decode</span><span class="v2">{{ses.decode}}</span></div>
 </div>
 <div class="row"><span class="lbl">KV cache</span><div class="trk"><div class="fill" style="width: {{ses.kvW}}%; background: {{ses.kvColor}}"></div></div><span class="val" style="min-width: 50px">{{ses.kv}}</span></div>
-<div class="mono" style="font-size: 11.5px; color: var(--muted); margin-top: -10px">of 3.42M tok · peak {{windowLabel}} {{ses.kvPeak}}</div>
-<div class="kv left"><span class="k">prefix hit</span><span class="v2">57.8% 5m · 98.7% lifetime</span><span class="k">finished</span><span class="v2">259 in 5m · 51.8/min</span><span class="k">reasons</span><span class="v2">stop 1.66K · <span style="color: var(--warn)">length 138</span></span></div>
+<div class="mono" style="font-size: 11.5px; color: var(--muted); margin-top: -10px">{{ses.kvLine}}</div>
+<div class="kv left"><span class="k">prefix hit</span><span class="v2">{{ses.hit}}</span><span class="k">finished</span><span class="v2">{{ses.finished}}</span><span class="k">reasons</span><span class="v2"><sc-for list="{{ses.reasons}}" as="rs" hint-placeholder-count="2"><span style="color: {{rs.c}}">{{rs.t}}</span></sc-for></span></div>
 <div class="row"><span class="lbl">concurrency</span><div class="spark" role="img" aria-label="Concurrency over the window"><sc-for list="{{ses.spark}}" as="b" hint-placeholder-count="60"><div class="ol-kv" style="height: {{b.h}}%; background: var(--kv); opacity: {{b.o}}"></div></sc-for></div></div>
 </section>
 
 <section class="cell w4" aria-labelledby="h-mtp">
-<div class="hd"><h2 id="h-mtp"><span class="num" aria-hidden="true">04 /</span><span class="key ol-mtp" style="background: var(--mtp)" aria-hidden="true"></span>MTP spec decode</h2><span class="aside">{{windowLabel}}</span></div>
+<div class="hd"><h2 id="h-mtp"><span class="num" aria-hidden="true">04 /</span><span class="key ol-mtp" style="background: var(--mtp)" aria-hidden="true"></span>MTP spec decode</h2><span class="aside">{{mtp.scope}}</span></div>
 <div class="hero">
 <div class="big"><span class="v">{{mtp.len}}</span><span class="u">tok/step</span></div>
-<div class="kv"><span class="k">accepted</span><span class="v2">29.3% of drafted</span><span class="k">mean k</span><span class="v2">3.79 · 251/s drafts</span><span class="k">tokens</span><span class="v2">279/s of 953/s</span></div>
+<div class="kv"><span class="k">accepted</span><span class="v2">{{mtp.rate}}</span><span class="k">mean k</span><span class="v2">{{mtp.meanK}}</span><span class="k">tokens</span><span class="v2">{{mtp.tokens}}</span></div>
 </div>
 <div class="fun" role="list" aria-label="Acceptance by draft position">
 <sc-for list="{{mtp.funnel}}" as="f" hint-placeholder-count="5">
@@ -245,49 +260,56 @@ a{color:var(--ink-soft);text-decoration:none}a:hover{color:var(--ink)}
 </section>
 
 <section class="cell w4 last" aria-labelledby="h-lat">
-<div class="hd"><h2 id="h-lat"><span class="num" aria-hidden="true">05 /</span><span class="key" style="background: var(--req)" aria-hidden="true"></span>Latency</h2><span class="aside">5m · 259 requests</span></div>
+<div class="hd"><h2 id="h-lat"><span class="num" aria-hidden="true">05 /</span><span class="key" style="background: var(--req)" aria-hidden="true"></span>Latency</h2><span class="aside">{{latHead}}</span></div>
 <div class="tbl" role="table" aria-label="Latency percentiles" style="--cols: minmax(0, 1.5fr) repeat(3, minmax(0, 1fr))">
 <div class="tr hdr" role="row"><span role="columnheader"><span class="sr">Metric</span></span><span role="columnheader">p50</span><span role="columnheader">p90</span><span role="columnheader">p99</span></div>
 <sc-for list="{{lat}}" as="r" hint-placeholder-count="6"><div class="tr" role="row"><span class="nm" role="rowheader">{{r.n}}</span><span role="cell">{{r.a}}</span><span role="cell">{{r.b}}</span><span role="cell">{{r.c}}</span></div></sc-for>
 </div>
-<div class="kv left"><span class="k">decode per request</span><span class="v2">112 tok/s</span><span class="k">prefill per request</span><span class="v2">18.0K tok/s, cached excluded</span><span class="k">mean prompt</span><span class="v2">5.44K tok</span></div>
+<div class="kv left"><span class="k">decode per request</span><span class="v2">{{latDec}}</span><span class="k">prefill per request</span><span class="v2">{{latPre}}</span><span class="k">mean prompt</span><span class="v2">{{latPrompt}}</span></div>
 </section>
 
-<section class="cell w7" aria-labelledby="h-gpu">
-<div class="hd"><h2 id="h-gpu"><span class="num" aria-hidden="true">06 /</span><span class="key" style="background: var(--gpu)" aria-hidden="true"></span>GPU</h2><span class="aside">NVML · 2 devices</span></div>
+<sc-if value="{{showGpu}}" hint-placeholder-val="{{ true }}">
+<section class="cell {{gpuCls}}" aria-labelledby="h-gpu">
+<div class="hd"><h2 id="h-gpu"><span class="num" aria-hidden="true">06 /</span><span class="key" style="background: var(--gpu)" aria-hidden="true"></span>GPU</h2><span class="aside">{{gpuHead}}</span></div>
 <sc-for list="{{gpus}}" as="g" hint-placeholder-count="2">
 <div class="gpu {{g.cls}}">
 <h3><span class="i">{{g.i}}</span>{{g.name}}</h3>
 <div class="two">
-<div class="row"><span class="lbl" style="min-width: 44px">util</span><div class="trk"><div class="fill" style="width: {{g.util}}%; background: var(--gpu)"></div></div><span class="val" style="min-width: 44px">{{g.util}}%</span></div>
+<div class="row"><span class="lbl" style="min-width: 44px">util</span><div class="trk"><div class="fill" style="width: {{g.util}}%; background: var(--gpu)"></div></div><span class="val" style="min-width: 44px">{{g.utilText}}</span></div>
 <div class="row"><span class="lbl" style="min-width: 44px">HBM</span><div class="trk"><div class="fill" style="width: {{g.memW}}%; background: var(--muted)"></div></div><span class="val" style="min-width: 78px">{{g.mem}}</span></div>
 </div>
-<div class="gstats"><span><span class="k">sm </span>{{g.sm}}</span><span>{{g.temp}}</span><span><span class="k">mem bw </span>{{g.bw}}%</span><span><span class="k">power </span>{{g.pwr}}</span></div>
+<div class="gstats"><span><span class="k">sm </span>{{g.sm}}</span><span>{{g.temp}}</span><span><span class="k">mem bw </span>{{g.bw}}</span><span><span class="k">power </span>{{g.pwr}}</span></div>
 <div class="mini" role="img" aria-label="{{g.name}} utilization over the window"><sc-for list="{{g.hist}}" as="b" hint-placeholder-count="60"><div style="height: {{b.h}}%; opacity: {{b.o}}"></div></sc-for></div>
 </div>
 </sc-for>
 </section>
+</sc-if>
 
-<section class="cell w5" aria-labelledby="h-host">
-<div class="hd"><h2 id="h-host"><span class="num" aria-hidden="true">07 /</span><span class="key" style="background: var(--cpu)" aria-hidden="true"></span>Host</h2><span class="aside">gracie · 72 cores · load <b>{{host.load}}</b></span></div>
+<sc-if value="{{showHost}}" hint-placeholder-val="{{ true }}">
+<section class="cell {{hostCls}}" aria-labelledby="h-host">
+<div class="hd"><h2 id="h-host"><span class="num" aria-hidden="true">07 /</span><span class="key" style="background: var(--cpu)" aria-hidden="true"></span>Host</h2><span class="aside">{{host.head}} · load <b>{{host.load}}</b></span></div>
 <div class="row"><span class="lbl" style="min-width: 58px">cpu</span><div class="trk"><div class="fill" style="width: {{host.cpuW}}%; background: var(--cpu)"></div></div><span class="val" style="min-width: 50px">{{host.cpu}}</span></div>
 <div class="row"><span class="lbl" style="min-width: 58px">cores</span><div class="cores" role="img" aria-label="Per-core load"><sc-for list="{{host.cores}}" as="c" hint-placeholder-count="72"><div style="height: {{c.h}}%; opacity: {{c.o}}"></div></sc-for></div></div>
-<div class="row"><span class="lbl" style="min-width: 58px">memory</span><div class="mbar" aria-hidden="true"><sc-for list="{{host.segs}}" as="s" hint-placeholder-count="4"><div style="width: {{s.w}}%; background: {{s.c}}"></div></sc-for></div><span class="val" style="min-width: 92px">437G of 494G</span></div>
-<ul class="leg"><sc-for list="{{host.segs}}" as="s" hint-placeholder-count="4"><li><i class="sq" style="background: {{s.c}}" aria-hidden="true"></i>{{s.k}} <b>{{s.v}}</b></li></sc-for><li>free <b>20.7G</b></li><li>available <b style="color: var(--warn)">57.3G</b></li></ul>
+<div class="row"><span class="lbl" style="min-width: 58px">memory</span><div class="mbar" aria-hidden="true"><sc-for list="{{host.segs}}" as="s" hint-placeholder-count="4"><div style="width: {{s.w}}%; background: {{s.c}}"></div></sc-for></div><span class="val" style="min-width: 92px">{{host.memText}}</span></div>
+<ul class="leg"><sc-for list="{{host.segs}}" as="s" hint-placeholder-count="4"><li><i class="sq" style="background: {{s.c}}" aria-hidden="true"></i>{{s.k}} <b>{{s.v}}</b></li></sc-for><li>free <b>{{host.free}}</b></li><li>available <b style="color: {{host.availColor}}">{{host.avail}}</b></li></ul>
 <div class="tbl" role="table" aria-label="Busiest processes" style="--cols: minmax(0, 1fr) 64px 64px">
 <div class="tr hdr" role="row"><span role="columnheader">Process</span><span role="columnheader">cpu</span><span role="columnheader">rss</span></div>
 <sc-for list="{{host.top}}" as="p" hint-placeholder-count="3"><div class="tr" role="row"><span class="nm" role="rowheader"><sc-if value="{{p.vllm}}" hint-placeholder-val="{{ true }}"><span class="vl" aria-label="vLLM process">●</span></sc-if>{{p.n}}</span><span role="cell">{{p.cpu}}</span><span role="cell">{{p.rss}}</span></div></sc-for>
 </div>
 </section>
+</sc-if>
 
 <section class="cell w12" aria-labelledby="h-req">
-<div class="hd"><h2 id="h-req"><span class="num" aria-hidden="true">08 /</span><span class="key" style="background: var(--req)" aria-hidden="true"></span>Recent requests</h2><span class="aside">LiteLLM gracie/% · rows arrive up to 60 s after completion</span></div>
+<div class="hd"><h2 id="h-req"><span class="num" aria-hidden="true">08 /</span><span class="key" style="background: var(--req)" aria-hidden="true"></span>Recent requests</h2><span class="aside">{{reqHead}}</span></div>
+<sc-if value="{{reqMsgOn}}" hint-placeholder-val="{{ false }}"><p class="mono" style="margin: 0; font-size: 12.5px; color: var(--muted)">{{reqMsg}}</p></sc-if>
+<sc-if value="{{reqTable}}" hint-placeholder-val="{{ true }}">
 <div class="scroll">
 <div class="tbl rq" role="table" aria-label="Recent requests" style="--cols: 76px minmax(150px, 1.6fr) 118px 64px 70px 70px 80px; min-width: 760px">
 <div class="tr hdr" role="row"><span role="columnheader">Start</span><span class="l" role="columnheader">Client</span><span role="columnheader">Prompt</span><span role="columnheader">Out</span><span role="columnheader">TTFT</span><span role="columnheader">tok/s</span><span role="columnheader">Duration</span></div>
-<sc-for list="{{reqs}}" as="r" hint-placeholder-count="8"><div class="tr" role="row"><span role="cell" style="color: var(--ink-soft)">{{r.start}}</span><span class="nm l cl" role="cell">{{r.client}}</span><span role="cell" data-l="prompt">{{r.prompt}}<span class="pbar" style="width: {{r.pw}}px" aria-hidden="true"></span></span><span role="cell" data-l="out">{{r.out}}</span><span role="cell" data-l="ttft">{{r.ttft}}</span><span role="cell" data-l="tok/s">{{r.rate}}</span><span role="cell" data-l="took" style="color: var(--ink-soft)">{{r.dur}}</span></div></sc-for>
+<sc-for list="{{reqs}}" as="r" hint-placeholder-count="8"><div class="tr" role="row"><span role="cell" style="color: var(--ink-soft)">{{r.start}}</span><span class="nm l cl" role="cell" style="color: {{r.cc}}">{{r.client}}</span><span role="cell" data-l="prompt">{{r.prompt}}<span class="pbar" style="width: {{r.pw}}px" aria-hidden="true"></span></span><span role="cell" data-l="out">{{r.out}}</span><span role="cell" data-l="ttft">{{r.ttft}}</span><span role="cell" data-l="tok/s">{{r.rate}}</span><span role="cell" data-l="took" style="color: var(--ink-soft)">{{r.dur}}</span></div></sc-for>
 </div>
 </div>
+</sc-if>
 </section>
 
 </main>
@@ -304,8 +326,7 @@ a{color:var(--ink-soft);text-decoration:none}a:hover{color:var(--ink)}
 </div>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["lil","lil-light","graphite","synthwave"],"default":"lil"},"window":{"editor":"enum","options":["1m","5m","15m","1h","6h","24h"],"default":"5m"},"animate":{"editor":"boolean","default":true},"$preview":{"width":1440,"height":1880}}'>
-const DATA_URL = '/_blob/d001b74a5a10640d0062afa190b49a7e';
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["lil","lil-light","graphite","synthwave"],"default":"lil"},"window":{"editor":"enum","options":["1m","5m","15m","1h","6h","24h"],"default":"5m"},"$preview":{"width":1440,"height":1880}}'>
 const WINDOWS = [[60, '1m', 1], [300, '5m', 3], [900, '15m', 10], [3600, '1h', 30], [21600, '6h', 180], [86400, '24h', 600]];
 const TICK = { 60: 15, 300: 60, 900: 180, 3600: 900, 21600: 3600, 86400: 21600 };
 const SERIES = ['decode', 'kv', 'prefill', 'gpu', 'mtp', 'req', 'cpu', 'mem'];
@@ -318,10 +339,14 @@ const THEMES = {
   'graphite': { label: 'graphite', bg: '#1a1a19', surface: '#20201f', raised: '#2a2a28', line: 'rgba(255,255,255,0.08)', lineStrong: 'rgba(255,255,255,0.13)', ink: '#ecece8', soft: '#c3c2b7', muted: '#9a998f', faint: '#86857c', grid: 'rgba(255,255,255,0.03)', track: '#2a2a28', hover: 'rgba(255,255,255,0.04)', glow: 'rgba(57,135,229,0.05)', cyan: '#3987e5', cyanA: 'rgba(57,135,229,0.10)', cyanB: 'rgba(57,135,229,0.45)', good: '#0ca30c', warn: '#fab219', serious: '#ec835a', crit: '#d03b3b', s: ['#3987e5', '#c98500', '#9085e9', '#d95926', '#199e70', '#d55181', '#3fa653', '#6f8fb3'], outline: 'none' },
   'synthwave': { label: 'synthwave', bg: '#1a1027', surface: '#21142f', raised: '#2b1b3d', line: 'rgba(255,255,255,0.09)', lineStrong: 'rgba(255,255,255,0.15)', ink: '#f5e9ff', soft: '#d4c2ec', muted: '#a896c4', faint: '#9482b0', grid: 'rgba(255,126,219,0.05)', track: '#2e1f44', hover: 'rgba(255,255,255,0.05)', glow: 'rgba(255,126,219,0.10)', cyan: '#36f9f6', cyanA: 'rgba(54,249,246,0.10)', cyanB: 'rgba(54,249,246,0.45)', good: '#3cf2a6', warn: '#ffd84d', serious: '#ff9a4d', crit: '#ff4d6d', s: ['#36f9f6', '#fede5d', '#ff7edb', '#ff8b39', '#72f1b8', '#fe4450', '#9df46a', '#b893ce'], outline: 'none' },
 };
+// Formats mirror the TUI (src/ui/widgets.rs): si, secs, ago and the host panel's gib.
 function si(v) {
   if (v == null || !isFinite(v)) return 'n/a';
   const a = Math.abs(v);
-  if (a >= 1e6) return (v / 1e6).toFixed(a >= 1e7 ? 1 : 2) + 'M';
+  if (a >= 1e9) return (v / 1e9).toFixed(2) + 'G';
+  if (a >= 1e8) return (v / 1e6).toFixed(0) + 'M';
+  if (a >= 1e7) return (v / 1e6).toFixed(1) + 'M';
+  if (a >= 1e6) return (v / 1e6).toFixed(2) + 'M';
   if (a >= 1e5) return (v / 1e3).toFixed(0) + 'K';
   if (a >= 1e4) return (v / 1e3).toFixed(1) + 'K';
   if (a >= 1e3) return (v / 1e3).toFixed(2) + 'K';
@@ -329,89 +354,89 @@ function si(v) {
   if (a >= 10) return v.toFixed(1);
   return v.toFixed(2);
 }
+function count(v) { return v == null || !isFinite(v) ? 'n/a' : (Math.abs(v) < 1000 ? v.toFixed(0) : si(v)); }
+function secs(s) {
+  if (s == null || !isFinite(s)) return 'n/a';
+  if (s < 0.001) return (s * 1e6).toFixed(0) + 'µs';
+  if (s < 0.01) return (s * 1e3).toFixed(1) + 'ms';
+  if (s < 1) return (s * 1e3).toFixed(0) + 'ms';
+  if (s < 10) return s.toFixed(2) + 's';
+  if (s < 60) return s.toFixed(1) + 's';
+  const p = (n) => String(Math.floor(n)).padStart(2, '0');
+  if (s < 3600) return Math.floor(s / 60) + 'm' + p(s % 60) + 's';
+  if (s < 86400) return Math.floor(s / 3600) + 'h' + p((s % 3600) / 60) + 'm';
+  return Math.floor(s / 86400) + 'd' + Math.floor((s % 86400) / 3600) + 'h';
+}
+function agoShort(s) {
+  s = Math.max(0, s || 0);
+  if (s < 60) return s.toFixed(0) + 's';
+  if (s < 3600) return (s / 60).toFixed(0) + 'm';
+  if (s < 86400) return (s / 3600).toFixed(0) + 'h';
+  return (s / 86400).toFixed(0) + 'd';
+}
+function gib(b) {
+  if (b == null || !isFinite(b)) return 'n/a';
+  const g = b / 1073741824;
+  return (g >= 100 ? g.toFixed(0) : g >= 10 ? g.toFixed(1) : g.toFixed(2)) + 'G';
+}
+function pct(f) { return f == null || !isFinite(f) ? 'n/a' : (f * 100).toFixed(1) + '%'; }
+function level(f) { return f >= 0.95 ? 'var(--crit)' : f >= 0.85 ? 'var(--serious)' : f >= 0.70 ? 'var(--warn)' : 'var(--good)'; }
 function axis(v) { const s = si(v); const m = s.match(/^([\d.]+)(\D*)$/); if (!m) return s; return (m[1].includes('.') ? m[1].replace(/0+$/, '').replace(/\.$/, '') : m[1]) + m[2]; }
 function niceCeil(v) { if (!(v > 0)) return 1; const e = Math.pow(10, Math.floor(Math.log10(v))); for (const m of [1, 2, 2.5, 5, 10]) if (v <= m * e * 1.0000001) return m * e; return 10 * e; }
 function ago(s) { if (s <= 0) return 'now'; if (s < 60) return s + 's ago'; if (s < 3600) return Math.floor(s / 60) + 'm ' + (s % 60) + 's ago'; return Math.floor(s / 3600) + 'h ' + (Math.floor(s / 60) % 60) + 'm ago'; }
 function tickLabel(s) { if (s === 0) return 'now'; if (s < 60) return s + 's'; if (s < 3600) return s / 60 + 'm'; return s / 3600 + 'h'; }
 function clock(t) { const d = new Date(t * 1000); return [d.getHours(), d.getMinutes(), d.getSeconds()].map(x => String(x).padStart(2, '0')).join(':'); }
 function split(v) { const s = si(v); const m = s.match(/^([\d.]+)(\D*)$/); return m ? [m[1], m[2]] : [s, '']; }
+function hostOf(url) { try { return new URL(url).host; } catch (e) { return url || ''; } }
+// One-row bar strips (sparks): nulls are seconds with no data.
+function strip(vals, ymax) {
+  return (vals || []).map(v => (v == null ? { h: 0, o: 0 } : { h: Math.max(v > 0 ? 6 : 2, (v / ymax) * 100).toFixed(1), o: v > 0 ? 1 : 0.3 }));
+}
 
 class Component extends DCLogic {
   st() { return this.state || {}; }
   componentDidMount() {
-    fetch(DATA_URL).then(r => r.json()).then(d => { this.load(d); this.setState({ ready: true }); }).catch(() => this.setState({ failed: true }));
-    this.timer = setInterval(() => {
-      if (!this.ready || this.props.animate === false) return;
-      this.push(true);
-      this.setState({ tick: (this.st().tick || 0) + 1 });
-    }, 1000);
+    this.poll();
+    this.timer = setInterval(() => this.poll(), 1000);
   }
   componentWillUnmount() { clearInterval(this.timer); }
 
-  load(d) {
-    this.liveD = d.liveDecode; this.liveP = d.livePrefill; this.li = 0;
-    this.now = Math.floor(Date.now() / 1000);
-    const n = d.histDecode.length;
-    this.t0 = this.now - n - this.liveD.length + 1;
-    this.dec = d.histDecode.slice(); this.pre = d.histPrefill.slice(); this.run = d.histRunning.slice(); this.kv = d.histKv.slice();
-    this.al = this.dec.map(v => (v > 0 ? 2.1 : null));
-    this.g0 = []; this.g1 = []; this.cpu = [];
-    for (let i = 0; i < n; i++) this.derive(i);
-    this.lastPrefill = null; this.inflight = 0; this.runTok = 0;
-    for (let i = 0; i < this.liveD.length; i++) this.push(false);
-    this.recDec = Math.max(...this.dec.filter(v => v != null));
-    this.recPre = Math.max(...this.pre.filter(v => v != null));
-    this.ready = true;
+  // Live state from `lilmon --serve`. One request at a time; a change of window or endpoint while a
+  // request is out queues one more, and a reply for an older window or endpoint is dropped.
+  query() {
+    const [win, , spc] = WINDOWS[this.win()];
+    return { ep: this.st().sel || 0, win, cols: Math.round(win / spc) };
   }
-  derive(i) {
-    const d = this.dec[i], p = this.pre[i];
-    if (d == null) { this.g0[i] = null; this.g1[i] = null; this.cpu[i] = null; return; }
-    this.g0[i] = p > 0 ? 100 : (d > 0 ? Math.min(100, 55 + d / 22) : 0);
-    this.g1[i] = d > 0 ? Math.min(60, 12 + d / 40) : (p > 0 ? 35 : 0);
-    this.cpu[i] = 1.4 + (d > 0 ? 0.9 : 0) + (p > 0 ? 1.4 : 0);
-  }
-  push(advance) {
-    const d = this.liveD[this.li], p = this.liveP[this.li];
-    this.li = (this.li + 1) % this.liveD.length;
-    if (advance) this.now += 1;
-    const r = d > 0 ? Math.max(1, Math.min(16, Math.round(d / 150))) : (p > 0 ? 1 : 0);
-    this.dec.push(d); this.pre.push(p); this.run.push(r);
-    this.kv.push(Math.min(12, +(r * 0.42 + (p > 0 ? p / 4200 : 0)).toFixed(1)));
-    this.al.push(d > 0 ? +(2.02 + 0.12 * Math.sin(this.now / 7) + 0.05 * Math.sin(this.now / 2.3)).toFixed(2) : null);
-    this.derive(this.dec.length - 1);
-    if (p > 0) { this.inflight += 1; this.runTok += p; }
-    else if (this.inflight > 0) { this.lastPrefill = { tok: this.runTok, secs: this.inflight, at: this.now }; this.inflight = 0; this.runTok = 0; }
-    const cap = 4 * 3600 + 600;
-    if (this.dec.length > cap) {
-      const k = this.dec.length - cap;
-      for (const a of [this.dec, this.pre, this.run, this.kv, this.al, this.g0, this.g1, this.cpu]) a.splice(0, k);
-      this.t0 += k;
-    }
+  poll() {
+    if (this.busy) { this.again = true; return; }
+    this.busy = true;
+    const q = this.query();
+    fetch('api/state?ep=' + q.ep + '&window=' + q.win + '&cols=' + q.cols + '&spark=60', { cache: 'no-store' })
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(d => {
+        if (!d || !Array.isArray(d.endpoints)) throw new Error('not a lilmon state reply');
+        const now = this.query();
+        if (d.window === now.win && (d.sel === now.ep || now.ep >= d.endpoints.length)) this.d = d;
+        this.err = null;
+      })
+      .catch(e => { this.err = (e && e.message) || String(e); })
+      .then(() => {
+        this.busy = false;
+        this.setState({ tick: (this.st().tick || 0) + 1 });
+        if (this.again) { this.again = false; this.poll(); }
+      });
   }
 
-  at(arr, t) { const i = t - this.t0; return i >= 0 && i < arr.length ? arr[i] : null; }
-  stat(arr, secs) { let mx = null, sum = 0, n = 0; for (let t = this.now - secs + 1; t <= this.now; t++) { const v = this.at(arr, t); if (v != null) { sum += v; n++; if (mx == null || v > mx) mx = v; } } return { max: mx, mean: n ? sum / n : null }; }
-  // Bins hold whole seconds anchored to absolute time, so history scrolls without reshaping (as in the TUI).
-  bins(arr, spc, n) {
-    const last = Math.floor(this.now / spc), out = [];
-    for (let i = 0; i < n; i++) {
-      const s0 = (last - (n - 1 - i)) * spc, s1 = Math.min(s0 + spc, this.now + 1);
-      let sum = 0, c = 0, mx = 0;
-      for (let t = s0; t < s1; t++) { const v = this.at(arr, t); if (v != null) { sum += v; c++; if (v > mx) mx = v; } }
-      out.push(c ? { mean: sum / c, max: mx, seen: true } : { mean: 0, max: 0, seen: false });
-    }
-    return out;
-  }
-  chart(key, arr, minY, noun) {
-    const [win, wl, spc] = WINDOWS[this.win()];
-    const n = Math.round(win / spc);
-    const b = this.bins(arr, spc, n);
+  chart(key, cols, minY, noun) {
+    const [win, wl] = WINDOWS[this.win()];
+    const n = cols.length || 1, spc = win / n;
+    const b = cols.map(c => ({ mean: c[0], max: c[1], seen: c[2] }));
     const peak = b.reduce((m, x) => Math.max(m, x.max), 0);
     const ymax = niceCeil(Math.max(peak * 1.08, minY));
     const h = this.st().hover;
     const hover = h && h.k === key ? h.i : -1;
     let pi = 0; b.forEach((x, i) => { if (x.max > b[pi].max) pi = i; });
-    const cols = b.map((x, i) => ({
+    const out = b.map((x, i) => ({
       meanPct: x.seen ? Math.max(x.mean > 0 ? 0.8 : 0, (x.mean / ymax) * 100).toFixed(2) : 0,
       maxPct: x.seen ? ((x.max / ymax) * 100).toFixed(2) : 0,
       enter: () => { const c = this.st().hover; if (!c || c.k !== key || c.i !== i) this.setState({ hover: { k: key, i } }); },
@@ -419,13 +444,13 @@ class Component extends DCLogic {
     const ticks = [];
     // First and last ticks stay on phones; the ones between hide below 640 px.
     for (let s = win; s >= 0; s -= TICK[win]) ticks.push({ label: tickLabel(s), left: ((1 - s / win) * 100).toFixed(2), cls: s === 0 ? 'end' : (s === win ? '' : 'tk-mid') });
-    const hv = hover >= 0 ? b[hover] : null;
+    const hv = hover >= 0 && hover < b.length ? b[hover] : null;
     return {
-      cols, ticks, ymax: axis(ymax), ymid: axis(ymax / 2),
+      cols: out, ticks, ymax: axis(ymax), ymid: axis(ymax / 2),
       label: noun + ' over the last ' + wl + ', peak ' + si(peak) + ' tokens per second',
       hasPeak: peak > 0, peakLabel: si(peak), peakLeft: (((pi + 0.5) / n) * 100).toFixed(2), peakBottom: Math.min(92, (peak / ymax) * 100).toFixed(2),
       tip: !!hv, tipLeft: Math.min(86, Math.max(14, ((hover + 0.5) / n) * 100)).toFixed(2),
-      tipAgo: hv ? ago((n - 1 - hover) * spc) : '', tipText: hv ? (hv.seen ? (spc > 1 ? 'mean ' + si(hv.mean) + ', max ' + si(hv.max) : si(hv.mean)) + ' tok/s' : 'no data') : '',
+      tipAgo: hv ? ago(Math.round((n - 1 - hover) * spc)) : '', tipText: hv ? (hv.seen ? (spc > 1 ? 'mean ' + si(hv.mean) + ', max ' + si(hv.max) : si(hv.mean)) + ' tok/s' : 'no data') : '',
       leave: () => { if (this.st().hover) this.setState({ hover: null }); },
     };
   }
@@ -436,70 +461,128 @@ class Component extends DCLogic {
     SERIES.forEach((k, i) => { v['--' + k] = t.s[i]; });
     return Object.entries(v).map(([k, x]) => k + ': ' + x).join('; ');
   }
-  spark(arr, n, ymax) {
-    const win = WINDOWS[this.win()][0];
-    return this.bins(arr, Math.max(1, Math.round(win / n)), n).map(x => ({ h: x.seen ? Math.max(x.max > 0 ? 6 : 2, (x.max / ymax) * 100).toFixed(1) : 0, o: x.seen ? (x.max > 0 ? 1 : 0.3) : 0 }));
-  }
 
   renderVals() {
     const tk = this.theme(), t = THEMES[tk] || THEMES.lil;
-    const wi = this.win(), wl = WINDOWS[wi][1];
-    const sel = this.st().sel || 0;
+    const wi = this.win(), [win, wl] = WINDOWS[wi];
+    const d = this.d, sel = Math.min(this.st().sel || 0, d ? Math.max(0, d.endpoints.length - 1) : 0);
+    const ep = d ? d.endpoints[sel] : null;
+    const offline = !!this.err;
+    const kind = offline ? 'offline' : ep ? ep.status : 'connecting';
+    const ST = { live: 'Live', stale: 'Stale', down: 'Down', auth: 'Not authorized', connecting: 'Connecting', offline: 'Not connected' };
+    let statusText = ST[kind] || kind;
+    if (offline) statusText = 'Not connected to lilmon';
+    else if (ep && kind === 'live') statusText = 'Live, ' + ep.status_text.split(', last took')[0];
+    else if (ep && ep.status_text) statusText = ST[kind] + ', ' + ep.status_text;
+    const meta = ep ? [ep.ctx ? ep.ctx + ' ctx' : null, ep.kv_dtype ? ep.kv_dtype + ' KV' : null, ep.kv_capacity != null ? si(ep.kv_capacity) + ' tok' : null, ep.uptime_s != null ? 'up ' + secs(ep.uptime_s) : null].filter(Boolean) : [];
     const base = {
-      rootStyle: this.rootStyle(t), model: 'dsv41-flash-uva', uptime: '2d 11h', statusText: 'Live, scraped every 500 ms', windowLabel: wl,
-      clock: this.now ? clock(this.now) : '',
-      endpoints: [['1', 'gracie'], ['2', 'localhost:8000']].map(([n, label], i) => ({ n, label, cls: sel === i ? 'on' : '', pressed: sel === i ? 'true' : 'false', pick: () => this.setState({ sel: i }) })),
-      windows: WINDOWS.map((w, i) => ({ label: w[1], cls: i === wi ? 'on' : '', pressed: i === wi ? 'true' : 'false', pick: () => this.setState({ win: i, hover: null }) })),
+      rootStyle: this.rootStyle(t), model: ep ? ep.model : 'lilmon', meta, statusText, statusKind: kind, windowLabel: wl,
+      clock: d ? clock(d.now) : '',
+      endpoints: (d ? d.endpoints : []).map((e, i) => ({ n: String(i + 1), label: e.name, cls: sel === i ? 'on' : '', pressed: sel === i ? 'true' : 'false', pick: () => { this.setState({ sel: i, hover: null }); this.poll(); } })),
+      windows: WINDOWS.map((w, i) => ({ label: w[1], cls: i === wi ? 'on' : '', pressed: i === wi ? 'true' : 'false', pick: () => { this.setState({ win: i, hover: null }); this.poll(); } })),
       themes: Object.entries(THEMES).map(([k, th]) => ({ label: th.label, cls: k === tk ? 'on' : '', pressed: k === tk ? 'true' : 'false', sw: 'background: ' + th.bg + '; box-shadow: inset 0 0 0 2px ' + th.s[0], pick: () => this.setState({ theme: k }) })),
-      connecting: sel === 1, showData: sel === 0 && !!this.ready,
+      offline, offlineDetail: offline ? 'Last attempt: ' + this.err : '',
+      waiting: !offline && !!ep && !ep.has_data,
+      waitTag: ST[kind] || 'Connecting', waitHost: ep ? hostOf(ep.url) : '',
+      waitText: ep ? (kind === 'down' || kind === 'auth' ? 'Last error: ' + ep.status_text + '. lilmon keeps retrying ' + ep.url + '.' : 'lilmon is scraping ' + ep.url + '. Panels fill in after the first scrape.') : '',
+      showData: !offline && !!ep && ep.has_data && !!d.decode,
     };
-    if (!this.ready) return Object.assign(base, { dec: {}, pre: {}, ses: {}, mtp: {}, gpus: [], host: {}, lat: [], reqs: [] });
+    if (!base.showData) return Object.assign(base, { dec: { c: {} }, pre: { c: {} }, ses: {}, mtp: {}, gpus: [], host: {}, lat: [], reqs: [], showGpu: false, showHost: false, reqTable: false, reqMsgOn: false });
 
-    const win = WINDOWS[wi][0];
-    const peaks = (arr) => [[60, '1m'], [300, '5m'], [900, '15m']].map(([s, l]) => ({ label: l, value: si(this.stat(arr, s).max) }));
-    const dNow = this.stat(this.dec, 2).mean || 0, pNow = this.stat(this.pre, 3).mean || 0;
-    const [dv, ds] = split(dNow), [pv, ps] = split(pNow);
-    const running = this.at(this.run, this.now) || 0;
-    const prefilling = (this.at(this.pre, this.now) || 0) > 0;
-    const lp = this.lastPrefill;
-    const kvNow = this.at(this.kv, this.now) || 0;
-    const kvPeak = this.stat(this.kv, win).max || 0;
-    const g0 = this.at(this.g0, this.now) || 0, g1 = this.at(this.g1, this.now) || 0, cpu = this.at(this.cpu, this.now) || 1.4;
-    const decoding = (this.at(this.dec, this.now) || 0) > 0;
-    // memory bar order validated as a set: anon, kernel, shmem, then reclaimable cache in neutral
-    const segs = [['anon', 131, 'var(--mem)'], ['kernel', 14.6, 'var(--kv)'], ['shmem', 261, 'var(--prefill)'], ['page cache', 67.2, 'var(--muted)']];
-    const reqOffsets = [12, 17, 20, 24, 28, 30, 33, 37];
-    const reqRows = [['629K', 629, '561', '1.59s', '293', '3.50s'], ['628K', 628, '835', '1.56s', '341', '4.00s'], ['627K', 627, '144', '1.56s', '1.08K', '1.69s'], ['627K', 627, '717', '2.13s', '445', '3.74s'], ['635', 0.6, '248', 'n/a', 'n/a', '943ms'], ['626K', 626, '389', '1.54s', '496', '2.32s'], ['626K', 626, '141', '1.54s', '1.05K', '1.68s'], ['625K', 625, '726', '1.73s', '431', '3.41s']];
+    const peaks = (ps) => ps.map(([l, v]) => ({ label: l, value: si(v) }));
+    // throughput
+    const D = d.decode, P = d.prefill;
+    const [dv, ds] = D.now == null ? ['n/a', ''] : split(D.now), [pv, ps] = P.now == null ? ['n/a', ''] : split(P.now);
+    const lp = P.last;
+    // sessions
+    const S = d.sessions;
+    const reasons = (S.reasons || []).map(([k, v], i) => ({ t: (i ? ' · ' : '') + k + ' ' + count(v), c: k === 'error' ? 'var(--crit)' : k === 'abort' ? 'var(--serious)' : (k === 'length' || k === 'repetition') ? 'var(--warn)' : 'var(--ink)' }));
+    if (S.preemptions > 0) reasons.push({ t: (reasons.length ? ' · ' : '') + 'preempt ' + count(S.preemptions), c: 'var(--warn)' });
+    const concMax = Math.max(4, ...(S.conc || []).filter(v => v != null));
+    // MTP
+    const M = d.mtp;
+    const posMax = Math.max(0.0001, ...(M.pos || []).filter(v => v != null));
+    // latency
+    const L = d.latency, wsecs = Math.min(win, 3600);
+    const latScope = L.secs + 5 < wsecs ? agoShort(L.secs) : (win > 3600 ? '1h' : wl);
+    // GPUs and host
+    const G = d.gpus, H = d.host;
+    // requests
+    const R = d.requests;
+    const maxPrompt = Math.max(1, ...(R.rows || []).map(r => r.prompt));
+    let reqMsg = '';
+    if (!R.enabled) reqMsg = 'Add --litellm HOST (or [litellm] url in the config) to list recent requests from a LiteLLM proxy.';
+    else if (R.error) reqMsg = 'LiteLLM: ' + R.error;
+    else if (R.polled_ago == null) reqMsg = 'Querying LiteLLM.';
+    else if (!R.rows.length) reqMsg = 'No requests in the last 6 h.';
+    const reqHead = R.enabled ? 'LiteLLM ' + (R.host || '') + ' · ' + R.match + ' · rows arrive up to 60 s after completion' : 'LiteLLM not configured';
+
     return Object.assign(base, {
-      dec: { now: dv, suffix: ds, peaks: peaks(this.dec), avg: si(this.stat(this.dec, win).mean), perSeq: running > 0 ? si(dNow / running) + ' tok/s × ' + running : 'n/a', record: si(this.recDec), c: this.chart('decode', this.dec, 10, 'Decode') },
+      dec: {
+        now: dv, suffix: ds, peaks: peaks(D.peaks), avg: si(D.avg), record: si(D.record),
+        perReq: D.per_req == null ? 'n/a' : si(D.per_req) + ' tok/s',
+        perSeq: D.per_seq == null ? 'n/a' : si(D.per_seq) + ' tok/s × ' + count(D.running),
+        c: this.chart('decode', D.cols, 10, 'Decode'),
+      },
       pre: {
-        now: pv, suffix: ps, peaks: peaks(this.pre), avg: si(this.stat(this.pre, win).mean), cached: si(2710), record: si(this.recPre),
-        prefilling, inflight: this.inflight + 's',
-        lastText: lp ? si(lp.tok) + ' in ' + lp.secs + 's, ' + si(lp.tok / lp.secs) + '/s, ' + Math.max(0, this.now - lp.at) + 's ago' : '95.3K in 2.43s, 39.2K/s',
-        c: this.chart('prefill', this.pre, 1000, 'Prefill'),
+        now: pv, suffix: ps, peaks: peaks(P.peaks), avg: si(P.avg), record: si(P.record),
+        cached: si(P.cached_rate) + (P.hit != null ? ' · ' + pct(P.hit) + ' hit' : ''),
+        prefilling: P.prefilling > 0, inflightN: count(P.prefilling), inflight: secs(P.prefilling_for),
+        lastText: lp ? si(lp.tokens) + ' in ' + secs(lp.secs) + ', ' + si(lp.rate) + '/s, ' + agoShort(lp.ago) + ' ago' : 'none yet',
+        c: this.chart('prefill', P.cols, 1000, 'Prefill'),
       },
       ses: {
-        running, prefill: prefilling ? 1 : 0, decode: Math.max(0, running - (prefilling ? 1 : 0)),
-        kv: kvNow.toFixed(1) + '%', kvW: Math.min(100, kvNow).toFixed(1), kvColor: kvNow >= 95 ? 'var(--crit)' : kvNow >= 85 ? 'var(--serious)' : kvNow >= 70 ? 'var(--warn)' : 'var(--good)', kvPeak: kvPeak.toFixed(1) + '%',
-        spark: this.spark(this.run, 60, Math.max(4, this.stat(this.run, win).max || 1)),
+        running: count(S.running), waiting: count(S.waiting) + (S.deferred > 0 ? ' (' + count(S.deferred) + ' deferred)' : ''),
+        prefill: count(S.prefilling), decode: count(S.decoding),
+        kv: pct(S.kv), kvW: Math.min(100, S.kv * 100).toFixed(1), kvColor: level(S.kv),
+        kvLine: (S.kv_capacity != null ? 'of ' + si(S.kv_capacity) + ' tok · ' : '') + 'peak ' + wl + ' ' + pct(S.kv_peak),
+        hit: pct(S.hit) + ' ' + wl + ' · ' + pct(S.hit_life) + ' lifetime',
+        finished: count(S.finished) + ' in ' + wl + ' · ' + si(S.per_min) + '/min',
+        reasons, spark: strip(S.conc, concMax),
       },
       mtp: {
-        len: (this.stat(this.al, win).mean || 2.11).toFixed(2),
-        funnel: [['+1', 62.0], ['+2', 31.9], ['+3', 14.5], ['+4', 5.1], ['+5', 1.9]].map(([k, p]) => ({ k, p: p.toFixed(1) + '%', w: p, o: (0.45 + 0.55 * p / 62).toFixed(2) })),
-        spark: this.spark(this.al, 60, 3.2),
+        scope: M.lifetime ? 'lifetime' : wl,
+        len: M.accept_len == null ? 'n/a' : M.accept_len.toFixed(2),
+        rate: M.enabled ? (M.accept_rate == null ? 'n/a' : pct(M.accept_rate) + ' of drafted') : 'not enabled',
+        meanK: M.mean_k == null ? 'n/a' : M.mean_k.toFixed(2) + (M.drafts_per_s != null ? ' · ' + si(M.drafts_per_s) + '/s drafts' : ''),
+        tokens: M.accepted_per_s != null ? si(M.accepted_per_s) + '/s of ' + si(M.drafted_per_s) + '/s' : 'n/a',
+        funnel: (M.pos || []).map((r, i) => ({ k: '+' + (i + 1), p: r == null ? 'n/a' : (r * 100).toFixed(1) + '%', w: r == null ? 0 : (r * 100).toFixed(1), o: r == null ? 0 : (0.45 + 0.55 * r / posMax).toFixed(2) })),
+        spark: strip(M.spark, Math.max(2, (M.k_max || 1) + 1)),
       },
-      lat: [['TTFT', '68ms', '211ms', '2.21s'], ['ITL per step', '18ms', '24ms', '49ms'], ['TPOT', '8.2ms', '21ms', '25ms'], ['E2E', '6.28s', '9.56s', '13.9s'], ['Queue', '7µs', '13µs', '15µs'], ['Prefill', '154ms', '277ms', '2.21s']].map(([n, a, b, c]) => ({ n, a, b, c })),
-      gpus: [
-        { i: '1', name: 'GB300', cls: '', util: Math.round(g0), mem: '234 / 251G', memW: 93.2, sm: '2070 / 2070 MHz', temp: Math.round(38 + g0 * 0.16) + '°C', bw: Math.round(g0 * 0.52), pwr: Math.round(210 + g0 * 4.82) + ' / 1300 W', hist: this.spark(this.g0, 60, 100) },
-        { i: '0', name: 'RTX PRO 6000 Blackwell Max-Q', cls: 'last', util: Math.round(g1), mem: '86 / 96G', memW: 89.6, sm: (g1 > 0 ? 2250 : 180) + ' / 3090 MHz', temp: Math.round(64 + g1 * 0.25) + '°C', bw: Math.round(g1 * 0.48), pwr: Math.round(22 + g1 * 3.6) + ' / 250 W', hist: this.spark(this.g1, 60, 100) },
-      ],
-      host: {
-        load: '1.54 1.42 1.28', cpu: cpu.toFixed(1) + '%', cpuW: Math.min(100, cpu * 4).toFixed(1),
-        cores: Array.from({ length: 72 }, (_, i) => { const v = i === 12 ? 100 : (decoding && i < 4 ? 38 + (i * 7) % 11 : ((i * 37 + this.now) % 9 === 0 ? 6 : 1.5)); return { h: Math.max(5, v).toFixed(0), o: (0.35 + 0.65 * v / 100).toFixed(2) }; }),
-        segs: segs.map(([k, v, c]) => ({ k, v: v + 'G', w: (v / 494 * 100).toFixed(2), c })),
-        top: [['peer_server2', '100%', '3.79G', false], ['EngineCore', decoding ? '44%' : '2%', '108G', true], ['DiffusionWorker', '2%', '274G', true]].map(([n, c, r, v]) => ({ n, cpu: c, rss: r, vllm: v })),
-      },
-      reqs: reqRows.map((r, i) => ({ start: clock(this.now - reqOffsets[i]), client: 'OpenAI/Python 2.24.0', prompt: r[0], pw: Math.max(2, Math.round(r[1] / 629 * 44)), out: r[2], ttft: r[3], rate: r[4], dur: r[5] })),
+      lat: L.rows.map(([n, a, b, c]) => ({ n, a: secs(a), b: secs(b), c: secs(c) })),
+      latHead: latScope + ' · ' + count(L.requests) + ' requests',
+      latDec: L.decode_req == null ? 'n/a' : si(L.decode_req) + ' tok/s',
+      latPre: L.prefill_req == null ? 'n/a' : si(L.prefill_req) + ' tok/s, cached excluded',
+      latPrompt: L.mean_prompt == null ? 'n/a' : si(L.mean_prompt) + ' tok',
+      showGpu: !!G && G.length > 0, gpuCls: H ? 'w7' : 'w12',
+      gpuHead: G ? 'NVML · ' + G.length + (G.length === 1 ? ' device' : ' devices') : '',
+      gpus: (G || []).map((g, i) => ({
+        i: String(g.index), name: g.name, cls: i === G.length - 1 ? 'last' : '',
+        util: g.util == null ? 0 : g.util, utilText: g.util == null ? 'n/a' : g.util + '%',
+        memW: g.mem_used != null && g.mem_total ? (g.mem_used / g.mem_total * 100).toFixed(1) : 0,
+        mem: g.mem_used != null && g.mem_total != null ? (g.mem_used / 1073741824).toFixed(0) + ' / ' + (g.mem_total / 1073741824).toFixed(0) + 'G' : 'n/a',
+        sm: g.sm == null ? 'n/a' : g.sm + (g.sm_max != null ? ' / ' + g.sm_max : '') + ' MHz',
+        temp: g.temp == null ? 'n/a' : g.temp + '°C',
+        bw: g.mem_util == null ? 'n/a' : g.mem_util + '%',
+        pwr: g.power == null ? 'n/a' : g.power.toFixed(0) + (g.power_limit != null ? ' / ' + g.power_limit.toFixed(0) : '') + ' W',
+        hist: strip(g.hist, 100),
+      })),
+      showHost: !!H, hostCls: G && G.length ? 'w5' : 'w12',
+      host: H ? {
+        head: H.hostname + ' · ' + H.cores.length + ' cores', load: H.load.map(x => x.toFixed(2)).join(' '),
+        cpu: pct(H.cpu) + (H.iowait >= 0.005 ? ' · io ' + pct(H.iowait) : ''), cpuW: Math.min(100, H.cpu * 100).toFixed(1),
+        cores: H.cores.map(v => ({ h: Math.max(5, v * 100).toFixed(0), o: (0.35 + 0.65 * v).toFixed(2) })),
+        // memory bar order validated as a set: anon, kernel, shmem, then reclaimable cache in neutral
+        segs: [['anon', H.anon, 'var(--mem)'], ['kernel', H.kernel, 'var(--kv)'], ['shmem', H.shmem, 'var(--prefill)'], ['page cache', H.cache, 'var(--muted)']]
+          .map(([k, v, c]) => ({ k, v: gib(v), w: (v / H.mem_total * 100).toFixed(2), c })),
+        memText: gib(H.mem_used) + ' of ' + gib(H.mem_total), free: gib(H.mem_free), avail: gib(H.mem_avail), availColor: level(1 - H.mem_avail / H.mem_total),
+        top: H.top.map(p => ({ n: p.name, cpu: p.cpu.toFixed(0) + '%', rss: gib(p.rss), vllm: p.vllm })),
+      } : {},
+      reqHead, reqMsg, reqMsgOn: !!reqMsg, reqTable: R.enabled && !R.error && R.rows.length > 0,
+      reqs: (R.rows || []).slice(0, 20).map(r => ({
+        start: clock(r.start), client: r.client || 'n/a', prompt: si(r.prompt), pw: Math.max(2, Math.round(r.prompt / maxPrompt * 44)),
+        out: count(r.completion), ttft: secs(r.ttft), rate: si(r.rate), dur: secs(r.dur), cc: r.ok ? 'var(--ink-soft)' : 'var(--crit)',
+      })),
     });
   }
 }

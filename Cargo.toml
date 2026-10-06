@@ -11,7 +11,7 @@ homepage = "https://local-inference-lab.ai"
 readme = "README.md"
 keywords = ["vllm", "llm", "inference", "tui", "monitoring"]
 categories = ["command-line-utilities", "visualization"]
-exclude = ["docs/", "web/"]
+exclude = ["docs/", "web/canvas/", "web/*.py", "web/README.md"]
 
 [dependencies]
 anyhow = "1"
@@ -19,6 +19,8 @@ clap = { version = "4.6", features = ["derive"] }
 dirs = "7"
 nvml-wrapper = "0.13"
 ratatui = "0.30"
+ctrlc = { version = "3", features = ["termination"] }
+tiny_http = "0.12"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "1"

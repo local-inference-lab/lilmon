@@ -6,6 +6,7 @@ mod gpu;
 mod host;
 mod litellm;
 mod prom;
+mod serve;
 mod state;
 mod ui;
 
@@ -17,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use state::{EndpointState, Field};
 use std::collections::{BTreeMap, VecDeque};
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use ui::theme::{self, Background, THEMES};
@@ -41,6 +42,13 @@ struct Cli {
     /// LiteLLM proxy for the requests panel: host (https), host:port (http) or a full URL
     #[arg(long, value_name = "HOST")]
     litellm: Option<String>,
+    /// Serve the web UI and its live data, on 127.0.0.1:7878 or --serve=ADDR (loopback by default;
+    /// binding another address shows endpoint, process and request details to that network)
+    #[arg(long, value_name = "ADDR", num_args = 0..=1, require_equals = true, default_missing_value = "127.0.0.1:7878")]
+    serve: Option<String>,
+    /// With --serve: run without the terminal UI (for a service or a remote box)
+    #[arg(long, requires = "serve")]
+    headless: bool,
     /// Color theme (see --list-themes)
     #[arg(short, long)]
     theme: Option<String>,
@@ -1048,6 +1056,69 @@ fn main() -> Result<()> {
 
     let (tx, rx) = mpsc::channel();
     start_sources(&app, &tx);
+    let app = Arc::new(Mutex::new(app));
+    if let Some(addr) = &cli.serve {
+        serve::spawn(app.clone(), addr.clone())?;
+        if cli.headless {
+            eprintln!("lilmon: serving the web UI on http://{addr}/ (Ctrl-C to stop)");
+        } else {
+            app.lock().expect("app").toast(format!("web UI on http://{addr}/"));
+        }
+    }
+    let res = if cli.headless { run_headless(&app, &rx, &cli, &records_path) } else { run_tui(&app, &tx, &rx, &cli, &records_path) };
+    let mut a = app.lock().expect("app");
+    for e in &mut a.eps {
+        e.st.persist(true);
+    }
+    if !cli.no_history {
+        a.save_records(&records_path);
+    }
+    res
+}
+
+/// Every 30 s: append settled history and save records.
+fn persist_tick(a: &mut App, cli: &Cli, records_path: &PathBuf, last: &mut Instant) {
+    if last.elapsed() >= Duration::from_secs(30) {
+        for e in &mut a.eps {
+            e.st.persist(false);
+        }
+        if !cli.no_history {
+            a.save_records(records_path);
+        }
+        *last = Instant::now();
+    }
+}
+
+/// No terminal: keep ingesting for the web UI until Ctrl-C or SIGTERM.
+fn run_headless(app: &Arc<Mutex<App>>, rx: &mpsc::Receiver<Msg>, cli: &Cli, records_path: &PathBuf) -> Result<()> {
+    let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    {
+        let stop = stop.clone();
+        ctrlc::set_handler(move || stop.store(true, Ordering::Relaxed))?;
+    }
+    let mut last_persist = Instant::now();
+    while !stop.load(Ordering::Relaxed) {
+        match rx.recv_timeout(Duration::from_millis(250)) {
+            Ok(m) => {
+                let mut a = app.lock().expect("app");
+                if !matches!(m, Msg::Input(_)) {
+                    a.handle(m);
+                }
+                while let Ok(m) = rx.try_recv() {
+                    if !matches!(m, Msg::Input(_)) {
+                        a.handle(m);
+                    }
+                }
+            }
+            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => break,
+        }
+        persist_tick(&mut app.lock().expect("app"), cli, records_path, &mut last_persist);
+    }
+    Ok(())
+}
+
+fn run_tui(app: &Arc<Mutex<App>>, tx: &Sender<Msg>, rx: &mpsc::Receiver<Msg>, cli: &Cli, records_path: &PathBuf) -> Result<()> {
     {
         let tx = tx.clone();
         std::thread::Builder::new().name("input".into()).spawn(move || {
@@ -1058,26 +1129,28 @@ fn main() -> Result<()> {
             }
         })?;
     }
-
     let mut terminal = ratatui::init();
-    let frame = Duration::from_millis(1000 / app.cfg.ui.max_fps.clamp(1, 120) as u64);
+    let frame = Duration::from_millis(1000 / app.lock().expect("app").cfg.ui.max_fps.clamp(1, 120) as u64);
     let mut last_draw = Instant::now() - Duration::from_secs(1);
     let mut last_persist = Instant::now();
     let mut dirty = true;
     let res: Result<()> = (|| {
         loop {
             let wait = if dirty { frame.saturating_sub(last_draw.elapsed()) } else { Duration::from_millis(250) };
-            match rx.recv_timeout(wait) {
+            // never hold the lock while waiting, so the web UI can read in between
+            let got = rx.recv_timeout(wait);
+            let mut a = app.lock().expect("app");
+            match got {
                 Ok(m) => {
                     let is_input = matches!(m, Msg::Input(_));
-                    if app.handle(m) {
+                    if a.handle(m) {
                         return Ok(());
                     }
-                    if is_input || !app.paused {
+                    if is_input || !a.paused {
                         dirty = true;
                     }
                     while let Ok(m) = rx.try_recv() {
-                        if app.handle(m) {
+                        if a.handle(m) {
                             return Ok(());
                         }
                     }
@@ -1085,35 +1158,21 @@ fn main() -> Result<()> {
                 Err(RecvTimeoutError::Timeout) => {}
                 Err(RecvTimeoutError::Disconnected) => return Ok(()),
             }
-            if !app.paused && last_draw.elapsed() >= Duration::from_secs(1) {
+            if !a.paused && last_draw.elapsed() >= Duration::from_secs(1) {
                 dirty = true;
             }
-            if app.toast.as_ref().is_some_and(|(_, t)| t.elapsed() > Duration::from_secs(5)) {
-                app.toast = None;
+            if a.toast.as_ref().is_some_and(|(_, t)| t.elapsed() > Duration::from_secs(5)) {
+                a.toast = None;
                 dirty = true;
             }
             if dirty && last_draw.elapsed() >= frame {
-                terminal.draw(|f| ui::draw(f, &app))?;
+                terminal.draw(|f| ui::draw(f, &a))?;
                 last_draw = Instant::now();
                 dirty = false;
             }
-            if last_persist.elapsed() >= Duration::from_secs(30) {
-                for e in &mut app.eps {
-                    e.st.persist(false);
-                }
-                if !cli.no_history {
-                    app.save_records(&records_path);
-                }
-                last_persist = Instant::now();
-            }
+            persist_tick(&mut a, cli, records_path, &mut last_persist);
         }
     })();
     ratatui::restore();
-    for e in &mut app.eps {
-        e.st.persist(true);
-    }
-    if !cli.no_history {
-        app.save_records(&records_path);
-    }
     res
 }

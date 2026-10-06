@@ -40,8 +40,8 @@ A fast, good-looking terminal dashboard for <a href="https://github.com/vllm-pro
   ever sends GET requests to endpoints vLLM already exposes.
 - **Yours to style.** 14 themes (the default, `lil`, uses the Local Inference Lab brand colors), a
   background that works on transparent terminals, and live settings you can save back to the config file.
-- **A web UI on the way.** A browser version of the dashboard in the lab's brand is in preview; see
-  [Web UI](#web-ui-preview).
+- **In the browser too.** `lilmon --serve` serves a web version of the dashboard, in the lab's brand,
+  with the same live numbers as the terminal; see [Web UI](#web-ui).
 
 ## Install
 
@@ -69,6 +69,7 @@ VLLM_API_KEY=sk-... lilmon      # servers started with --api-key
 lilmon 8000 --litellm litellm.example.com   # add recent requests from a LiteLLM proxy
 lilmon --theme nord --bg none   # try a theme and keep the terminal's transparency
 lilmon --list-themes            # every theme with swatches and a description
+lilmon --serve                  # also serve the web UI at http://127.0.0.1:7878/
 ```
 
 Press `?` inside lilmon for help, `s` for settings, and `t` to flip through themes.
@@ -89,31 +90,34 @@ Press `?` inside lilmon for help, `s` for settings, and `t` to flip through them
 <p align="center"><img src="docs/screenshots/settings.png" alt="The settings overlay" width="80%"></p>
 </details>
 
-## Web UI (preview)
+## Web UI
 
 <p align="center"><img src="docs/screenshots/web.webp" alt="The lilmon web UI in the lil theme" width="100%"></p>
 
-`web/` holds a browser version of the dashboard in the Local Inference Lab brand. It has the same panels
-as the terminal app: decode and prefill with peaks, sessions and KV cache, MTP acceptance, latency
-percentiles, GPU and host telemetry, and recent requests. It comes in `lil`, `lil light`, `graphite` and
-`synthwave` themes and stacks down to phone width.
-
-It is a design preview. It replays recorded data from a real server and doesn't read a live one yet.
+`lilmon --serve` also serves a browser version of the dashboard, at http://127.0.0.1:7878/. It shows the
+same panels as the terminal app: decode and prefill with peaks, sessions and KV cache, MTP acceptance,
+latency percentiles, GPU and host telemetry, and recent requests. Every number comes from the same state
+the TUI draws, so the two always agree. It comes in `lil`, `lil light`, `graphite` and `synthwave` themes
+and stacks down to phone width.
 
 ```sh
-xdg-open web/index.html                               # no build step or server needed
-python3 -m http.server -d web 4173                    # or serve it, then open http://localhost:4173/
+lilmon --serve                         # TUI plus the web UI on 127.0.0.1:7878
+lilmon --serve=127.0.0.1:9000          # pick the address
+lilmon --serve --headless              # web UI only, no terminal; Ctrl-C or SIGTERM saves history and stops
 ```
 
-URL parameters set the starting state, for example `index.html?theme=lil-light&window=1h`.
+The page polls `/api/state` once a second; endpoint tabs, the chart window and the theme are chosen in the
+page. The listener binds to loopback by default. Binding another address (for example
+`--serve=0.0.0.0:7878`) shows endpoint names, process names and LiteLLM request rows to that network,
+and there is no login, so use an SSH tunnel or a trusted network. vLLM and LiteLLM keys stay inside
+lilmon and are never sent to the page.
 
 <details>
 <summary><b>Light theme and phone layout</b></summary>
 <p align="center"><img src="docs/screenshots/web-light-phone.webp" alt="The web UI in the lil light theme and at phone width" width="100%"></p>
 </details>
 
-Next up is live data: an opt-in `lilmon --serve` listener that serves this page and the numbers lilmon
-already computes. [`web/README.md`](web/README.md) covers the files, how to rebuild the page, and that plan.
+[`web/README.md`](web/README.md) covers how the page is built and the shape of `/api/state`.
 
 ## Panels
 
@@ -214,7 +218,8 @@ then live changes) is the **running config**:
 - `lilmon --init-config [--force]` writes it to the config file. For example,
   `lilmon --theme nord --init-config --force` makes nord the default.
 
-`--no-gpu`, `--no-host`, `--no-litellm` and `--no-history` are for one run only and are never written.
+`--no-gpu`, `--no-host`, `--no-litellm`, `--no-history`, `--serve` and `--headless` are for one run only
+and are never written.
 
 ### API keys
 
