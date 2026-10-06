@@ -31,7 +31,7 @@ A fast, good-looking terminal dashboard for <a href="https://github.com/vllm-pro
   - Latency percentiles.
   - GPU telemetry (NVML) and host CPU, memory and top processes.
   - Optional per-request rows from LiteLLM.
-- **Featherweight and hands-off.** A single ~2.5 MB Rust binary that uses about 0.6% of one core. It only
+- **Featherweight and hands-off.** A single ~4 MB Rust binary that uses about 0.6% of one core. It only
   ever sends GET requests to endpoints vLLM already exposes.
 - **Yours to style.** 14 themes (the default, `lil`, uses the Local Inference Lab brand colors), a
   background that works on transparent terminals, and live settings you can save back to the config file.
@@ -236,10 +236,35 @@ api_key_env = "PROD_VLLM_KEY"
 
 ## LiteLLM source
 
-`[litellm].command` must start an interactive `psql -AtqX` session. lilmon keeps that session open and
-writes one read-only `SELECT` to it every `poll_s`; the reply is a single JSON array. The default uses ssh
-plus `docker exec` into `litellm-db`, with the container's own `POSTGRES_*` environment, so no
-credentials live in the config.
+If your vLLM servers sit behind a [LiteLLM](https://github.com/BerriAI/litellm) proxy, lilmon can show
+recent requests from its spend log. It polls `GET /spend/logs/v2` every `poll_s` seconds with a
+read-only key.
+
+```toml
+[litellm]
+url = "https://litellm.example.com"
+api_key_file = "~/.config/lilmon/litellm.key"   # or api_key, api_key_env, LITELLM_API_KEY
+
+[[endpoint]]
+name = "prod"
+url = "http://inference-box:8000/metrics"
+litellm_model_group = "prod/%"   # trailing % or / matches a prefix; otherwise an exact model group
+```
+
+Give lilmon its own key with the least access that works: a user with the `proxy_admin_viewer` role
+(read-only), and a key limited to that one route. With the proxy's master key:
+
+```sh
+curl -X POST "$LITELLM/user/new" -H "Authorization: Bearer $MASTER" -H 'Content-Type: application/json' \
+  -d '{"user_id": "lilmon-viewer", "user_role": "proxy_admin_viewer", "auto_create_key": false}'
+curl -X POST "$LITELLM/key/generate" -H "Authorization: Bearer $MASTER" -H 'Content-Type: application/json' \
+  -d '{"user_id": "lilmon-viewer", "key_alias": "lilmon", "allowed_routes": ["/spend/logs/v2"]}'
+```
+
+The key is looked up from `api_key`, then `api_key_file`, then the variable named by `api_key_env`, then
+`LITELLM_API_KEY`. A config that stores `api_key` inline is written owner-only (mode 600), and
+`--print-config` redacts it. Rows only cover traffic routed through LiteLLM, and they appear once
+LiteLLM writes its spend log, usually within a minute.
 
 ## Development
 

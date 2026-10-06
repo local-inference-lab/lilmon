@@ -681,7 +681,14 @@ fn build_app(cli: &Cli, file_cfg: &Config, cfg: Config, path: PathBuf) -> Result
         std::fs::read_to_string(sdir.join("records.json")).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
     };
     let win = WINDOWS.iter().position(|w| w.1 == cfg.window()).unwrap_or(1);
-    let litellm_on = !cli.no_litellm && cfg.litellm.is_some() && cfg.endpoints.iter().any(|e| e.litellm_model_group.is_some());
+    let litellm_on = !cli.no_litellm
+        && cfg.litellm.as_ref().is_some_and(|l| l.url.is_some())
+        && cfg.endpoints.iter().any(|e| e.litellm_model_group.is_some());
+    if cfg.litellm.as_ref().is_some_and(|l| l.url.is_none() && l.command.is_some()) {
+        startup_note = Some(
+            "LiteLLM now reads the spend log over its API: set [litellm] url and a read-only key (the psql command is ignored)".into(),
+        );
+    }
     let mut app = App {
         gpu: GpuState { enabled: !cli.no_gpu && cfg.gpu.enabled, ..Default::default() },
         host: HostState { enabled: !cli.no_host && cfg.host.enabled, ..Default::default() },
@@ -868,7 +875,10 @@ fn start_sources(app: &App, tx: &Sender<Msg>) {
                 .enumerate()
                 .filter_map(|(i, e)| e.cfg.litellm_model_group.clone().map(|p| (i, p)))
                 .collect();
-            litellm::spawn(tx.clone(), l.command.clone(), Duration::from_secs_f64(l.poll_s.max(1.0)), targets);
+            if let Some(url) = l.url.clone() {
+                // resolved here, at spawn time, so the key never enters the running config
+                litellm::spawn(tx.clone(), url, l.resolve_api_key(), Duration::from_secs_f64(l.poll_s.max(1.0)), targets);
+            }
         }
 }
 

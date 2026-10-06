@@ -53,11 +53,46 @@ pub struct SourceConfig {
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct LiteLlmConfig {
-    /// Command that starts an interactive `psql -AtqX` session against LiteLLM's database.
-    /// Queries are written to its stdin; nothing secret needs to live in this file.
-    pub command: Vec<String>,
+    /// Base URL of the LiteLLM proxy, e.g. https://litellm.example.com
+    #[serde(default)]
+    pub url: Option<String>,
+    /// Read-only key (a proxy_admin_viewer user; can be limited to /spend/logs/v2).
+    #[serde(default)]
+    pub api_key: Option<String>,
+    /// File holding the key (keeps the secret out of this config); `~/` is expanded.
+    #[serde(default)]
+    pub api_key_file: Option<String>,
+    /// Environment variable holding the key.
+    #[serde(default)]
+    pub api_key_env: Option<String>,
     #[serde(default = "default_litellm_poll")]
     pub poll_s: f64,
+    /// The old ssh + psql source; recognized so old files still parse, but no longer used.
+    #[serde(default)]
+    pub command: Option<Vec<String>>,
+}
+
+pub const LITELLM_API_KEY_ENV: &str = "LITELLM_API_KEY";
+
+impl LiteLlmConfig {
+    /// `api_key`, then `api_key_file`, then the variable named by `api_key_env`, then LITELLM_API_KEY.
+    pub fn resolve_api_key(&self) -> Option<String> {
+        let clean = |k: String| Some(k.trim().to_string()).filter(|k| !k.is_empty());
+        let env = |name: &str| std::env::var(name).ok().and_then(clean);
+        let file = |p: &str| {
+            let path = match p.strip_prefix("~/") {
+                Some(rest) => dirs::home_dir().map(|h| h.join(rest)).unwrap_or_else(|| PathBuf::from(p)),
+                None => PathBuf::from(p),
+            };
+            std::fs::read_to_string(path).ok().and_then(clean)
+        };
+        self.api_key
+            .clone()
+            .and_then(clean)
+            .or_else(|| self.api_key_file.as_deref().and_then(file))
+            .or_else(|| self.api_key_env.as_deref().and_then(env))
+            .or_else(|| env(LITELLM_API_KEY_ENV))
+    }
 }
 
 fn default_litellm_poll() -> f64 {
@@ -216,7 +251,7 @@ pub fn write(path: &Path, cfg: &Config) -> Result<()> {
     }
     let tmp = path.with_extension("toml.tmp");
     std::fs::write(&tmp, render(cfg))?;
-    if cfg.endpoints.iter().any(|e| e.api_key.is_some()) {
+    if cfg.endpoints.iter().any(|e| e.api_key.is_some()) || cfg.litellm.as_ref().is_some_and(|l| l.api_key.is_some()) {
         // the file holds a secret: owner read/write only
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600))?;
@@ -326,33 +361,52 @@ fn render_opts(c: &Config, redact: bool) -> String {
     let _ = writeln!(o, "enabled = {}", c.host.enabled);
     let _ = writeln!(o, "interval_ms = {}", c.host.interval_ms);
     let _ = writeln!(o);
-    let _ = writeln!(o, "# Per-request rows from LiteLLM's spend log. The command must start an interactive");
-    let _ = writeln!(o, "# `psql -AtqX` session; lilmon writes read-only queries to its stdin, so no credentials");
-    let _ = writeln!(o, "# need to live here. Each endpoint opts in with litellm_model_group.");
+    let _ = writeln!(o, "# Per-request rows from a LiteLLM proxy's spend log, read from GET /spend/logs/v2. Use a");
+    let _ = writeln!(o, "# read-only key: a user with the proxy_admin_viewer role, ideally limited to that route with");
+    let _ = writeln!(o, "# allowed_routes. Key lookup: api_key, api_key_file, the variable in api_key_env, then");
+    let _ = writeln!(o, "# LITELLM_API_KEY. Each endpoint opts in with litellm_model_group.");
     match &c.litellm {
         Some(l) => {
             let _ = writeln!(o, "[litellm]");
-            // pack arguments onto lines of at most ~100 columns
-            let _ = writeln!(o, "command = [");
-            let mut line = String::from(" ");
-            for a in &l.command {
-                let item = format!(" {},", q(a));
-                if line.len() + item.len() > 100 && !line.trim().is_empty() {
-                    let _ = writeln!(o, "{line}");
-                    line = String::from(" ");
+            match &l.url {
+                Some(u) => {
+                    let _ = writeln!(o, "url = {}", q(u));
                 }
-                line.push_str(&item);
+                None => {
+                    let _ = writeln!(o, "# url = \"https://litellm.example.com\"");
+                }
             }
-            if !line.trim().is_empty() {
-                let _ = writeln!(o, "{line}");
+            match &l.api_key {
+                Some(k) => {
+                    let v = if redact { "<redacted>".to_string() } else { k.clone() };
+                    let _ = writeln!(o, "api_key = {}", q(&v));
+                }
+                None => {
+                    let _ = writeln!(o, "# api_key = \"sk-...\"");
+                }
             }
-            let _ = writeln!(o, "]");
+            match &l.api_key_file {
+                Some(f) => {
+                    let _ = writeln!(o, "api_key_file = {}", q(f));
+                }
+                None => {
+                    let _ = writeln!(o, "# api_key_file = \"~/.config/lilmon/litellm.key\"");
+                }
+            }
+            match &l.api_key_env {
+                Some(e) => {
+                    let _ = writeln!(o, "api_key_env = {}", q(e));
+                }
+                None => {
+                    let _ = writeln!(o, "# api_key_env = \"LITELLM_API_KEY\"");
+                }
+            }
             let _ = writeln!(o, "poll_s = {}", num(l.poll_s));
         }
         None => {
             let _ = writeln!(o, "# [litellm]");
-            let _ = writeln!(o, "# command = [\"ssh\", \"-o\", \"BatchMode=yes\", \"dbhost\",");
-            let _ = writeln!(o, "#            \"docker exec -i litellm-db sh -c 'exec psql -U \\\"$POSTGRES_USER\\\" -d \\\"$POSTGRES_DB\\\" -AtqX'\"]");
+            let _ = writeln!(o, "# url = \"https://litellm.example.com\"");
+            let _ = writeln!(o, "# api_key_file = \"~/.config/lilmon/litellm.key\"");
             let _ = writeln!(o, "# poll_s = 5");
         }
     }
@@ -429,8 +483,12 @@ mod tests {
         c.ui.window = Some("15m".into());
         c.ui.peaks = vec!["30s".into(), "10m".into()];
         c.litellm = Some(LiteLlmConfig {
-            command: vec!["ssh".into(), "h".into(), "docker exec -i db sh -c 'psql -U \"$U\"'".into()],
+            url: Some("https://litellm.example.com".into()),
+            api_key: None,
+            api_key_file: Some("~/.config/lilmon/litellm.key".into()),
+            api_key_env: Some("MY_LITELLM_KEY".into()),
             poll_s: 2.5,
+            command: None,
         });
         c.endpoints = vec![
             EndpointConfig {
@@ -461,6 +519,31 @@ mod tests {
         assert!(!txt.contains("sk-secret-123"));
         assert!(txt.contains("api_key = \"<redacted>\""));
         assert!(render(&c).contains("sk-secret-123"));
+    }
+
+    #[test]
+    fn litellm_key_redaction_and_file() {
+        let dir = std::env::temp_dir().join(format!("lilmon-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let kf = dir.join("k");
+        std::fs::write(&kf, "sk-from-file\n").unwrap();
+        let mut l = LiteLlmConfig {
+            url: Some("https://x".into()),
+            api_key: Some("sk-inline".into()),
+            api_key_file: Some(kf.display().to_string()),
+            api_key_env: None,
+            poll_s: 5.0,
+            command: None,
+        };
+        assert_eq!(l.resolve_api_key().as_deref(), Some("sk-inline"));
+        l.api_key = None;
+        assert_eq!(l.resolve_api_key().as_deref(), Some("sk-from-file"));
+        let c = Config { litellm: Some(LiteLlmConfig { api_key: Some("sk-inline".into()), ..l }), ..Config::default() };
+        assert!(!render_redacted(&c).contains("sk-inline"));
+        assert_eq!(parse(&render(&c)).unwrap().litellm, c.litellm);
+        // old ssh + psql configs still parse
+        assert!(parse("[litellm]\ncommand = [\"ssh\", \"db\"]\n").unwrap().litellm.unwrap().command.is_some());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
