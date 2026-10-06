@@ -96,6 +96,10 @@ struct Cli {
     snapshot_out: Option<PathBuf>,
     #[arg(long, hide = true, value_delimiter = ',')]
     snapshot_themes: Vec<String>,
+    /// Print a JSON map from every color theme FROM can draw to the matching color in TO
+    /// (FROM:TO), used to re-color captured screenshot frames
+    #[arg(long, hide = true, value_name = "FROM:TO")]
+    theme_map: Option<String>,
     /// With --snapshot-out: also write frame_NNNN.jsonl every this many seconds while collecting
     #[arg(long, hide = true)]
     snapshot_every: Option<f64>,
@@ -642,7 +646,7 @@ fn build_app(cli: &Cli, file_cfg: &Config, cfg: Config, path: PathBuf) -> Result
     let mut startup_note = None;
     match theme::find(&cfg.ui.theme) {
         Some(i) => theme::set_index(i),
-        None => startup_note = Some(format!("unknown theme {:?} in config; using graphite", cfg.ui.theme)),
+        None => startup_note = Some(format!("unknown theme {:?} in config; using lil", cfg.ui.theme)),
     }
     let bg = Background::parse(&cfg.ui.background).unwrap_or_else(|| {
         startup_note = Some(format!("bad background {:?} in config; using the theme's", cfg.ui.background));
@@ -791,6 +795,37 @@ fn migrate_legacy() -> Vec<String> {
     notes
 }
 
+/// Every color theme `a` can draw, mapped to the same role in theme `b`. Tokens come first so they win
+/// over gradient samples that round to the same value.
+fn theme_map(spec: &str) -> Result<()> {
+    let (a, b) = spec.split_once(':').ok_or_else(|| anyhow::anyhow!("--theme-map takes FROM:TO"))?;
+    let find = |n: &str| theme::find(n).map(|i| &THEMES[i]).ok_or_else(|| anyhow::anyhow!("unknown theme {n}"));
+    let (ta, tb) = (find(a)?, find(b)?);
+    let mut m = serde_json::Map::new();
+    let mut put = |x: ratatui::style::Color, y: ratatui::style::Color| {
+        m.entry(color_hex(x)).or_insert_with(|| color_hex(y).into());
+    };
+    for (x, y) in [
+        (ta.bg, tb.bg), (ta.text, tb.text), (ta.text2, tb.text2), (ta.muted, tb.muted), (ta.faint, tb.faint),
+        (ta.border, tb.border), (ta.grid, tb.grid), (ta.track, tb.track), (ta.tab_bg, tb.tab_bg),
+        (ta.good, tb.good), (ta.warn, tb.warn), (ta.serious, tb.serious), (ta.crit, tb.crit),
+        (ta.mem_anon, tb.mem_anon), (ta.mem_shmem, tb.mem_shmem), (ta.mem_cache, tb.mem_cache), (ta.mem_other, tb.mem_other),
+    ] {
+        put(x, y);
+    }
+    let ramps = |t: &'static theme::Theme| [&t.decode, &t.prefill, &t.mtp, &t.kv, &t.gpu, &t.req, &t.cpu, &t.mem];
+    for (ra, rb) in ramps(ta).into_iter().zip(ramps(tb)) {
+        put(ra.key, rb.key);
+        put(ra.band, rb.band);
+        for i in 0..=4000 {
+            let f = i as f64 / 4000.0;
+            put(ra.at(f), rb.at(f));
+        }
+    }
+    println!("{}", serde_json::Value::Object(m));
+    Ok(())
+}
+
 fn list_themes(current: &str) {
     let fg = |c: ratatui::style::Color| match c {
         ratatui::style::Color::Rgb(r, g, b) => format!("\x1b[38;2;{r};{g};{b}m"),
@@ -933,6 +968,9 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     let migrated = if cli.config.is_none() && !cli.no_history { migrate_legacy() } else { vec![] };
     let (file_cfg, cfg, path, exists) = effective_config(&cli)?;
+    if let Some(spec) = &cli.theme_map {
+        return theme_map(spec);
+    }
     if cli.list_themes {
         list_themes(&cfg.ui.theme);
         return Ok(());

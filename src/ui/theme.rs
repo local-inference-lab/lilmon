@@ -138,10 +138,23 @@ const fn build(s: Spec) -> Theme {
     }
 }
 
-pub static THEMES: [Theme; 13] = [
+pub static THEMES: [Theme; 14] = [
+    build(Spec {
+        name: "lil",
+        description: "Default. Local Inference Lab brand colors: near-black ground, cool ink, and the lab's violet, blue and cyan accents on the charts.",
+        light: false,
+        // Tokens from the lab's brand system (local-inference-lab/web styles.css): --bg, --ink,
+        // --ink-soft, --muted, --faint. Hairlines are --line / --line-strong composited over --bg.
+        bg: 0x050506, text: 0xf7f7fa, text2: 0xcbcbd3, muted: 0x8f8f9b, faint: 0x7a7a86,
+        border: 0x323233, grid: 0x212121, track: 0x212121, tab: 0x323233,
+        status: [0x0ca30c, 0xfab219, 0xec835a, 0xd03b3b],
+        // decode, prefill and MTP use the exact --blue, --violet and --cyan accents; the remaining
+        // series have no brand token and use the validated set from docs/brand/BRAND_NOTES.md
+        series: [0x3f6fff, 0x7928ff, 0x18c8e9, 0xc98500, 0xd95926, 0xd4508f, 0x3a9a4a, 0x7a7fd9],
+    }),
     build(Spec {
         name: "graphite",
-        description: "Default. Warm graphite surface with a colorblind-checked palette: blue decode, violet prefill, aqua MTP, amber KV.",
+        description: "Warm graphite surface with a colorblind-checked palette: blue decode, violet prefill, aqua MTP, amber KV.",
         light: false,
         bg: 0x1a1a19, text: 0xecece8, text2: 0xc3c2b7, muted: 0x85847c, faint: 0x55544f,
         border: 0x4a4a46, grid: 0x2e2e2c, track: 0x2a2a28, tab: 0x2f2f2d,
@@ -371,6 +384,12 @@ mod tests {
     }
 
     #[test]
+    fn lil_is_the_default_theme() {
+        assert_eq!(THEMES[0].name, "lil");
+        assert_eq!(crate::config::UiConfig::default().theme, "lil");
+    }
+
+    #[test]
     fn background_parse() {
         assert_eq!(Background::parse("none"), Some(Background::None));
         assert_eq!(Background::parse("#102030"), Some(Background::Color(rgb(0x102030))));
@@ -380,7 +399,7 @@ mod tests {
 
     #[test]
     fn graphite_ramps_stay_close_to_hand_tuned_originals() {
-        let d = &THEMES[0].decode;
+        let d = &THEMES[find("graphite").unwrap()].decode;
         let close = |a: (u8, u8, u8), b: (u8, u8, u8)| {
             (a.0 as i32 - b.0 as i32).abs() <= 24 && (a.1 as i32 - b.1 as i32).abs() <= 24 && (a.2 as i32 - b.2 as i32).abs() <= 24
         };

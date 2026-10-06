@@ -33,8 +33,8 @@ A fast, good-looking terminal dashboard for <a href="https://github.com/vllm-pro
   - Optional per-request rows from LiteLLM.
 - **Featherweight and hands-off.** A single ~2.5 MB Rust binary that uses about 0.6% of one core. It only
   ever sends GET requests to endpoints vLLM already exposes.
-- **Yours to style.** 13 themes, a background that works on transparent terminals, and live settings
-  you can save back to the config file.
+- **Yours to style.** 14 themes (the default, `lil`, uses the Local Inference Lab brand colors), a
+  background that works on transparent terminals, and live settings you can save back to the config file.
 
 ## Install
 
@@ -72,8 +72,8 @@ Press `?` inside lilmon for help, `s` for settings, and `t` to flip through them
 </p>
 
 <details open>
-<summary><b>Themes</b>: 8 of the 13 shown (graphite is the dashboard above, contrast the animation)</summary>
-<p align="center"><img src="docs/screenshots/themes.webp" alt="lilmon in the midnight, nord, dracula, gruvbox, catppuccin, synthwave, phosphor and paper themes" width="100%"></p>
+<summary><b>Themes</b>: 8 of the 14 shown (the default <code>lil</code> theme is the animation and dashboard above)</summary>
+<p align="center"><img src="docs/screenshots/themes.webp" alt="lilmon in the graphite, nord, dracula, gruvbox, catppuccin, synthwave, phosphor and paper themes" width="100%"></p>
 </details>
 
 <details>
@@ -128,7 +128,8 @@ prints each with color swatches. Every theme uses the same layout; only the colo
 
 | theme | description |
 |---|---|
-| `graphite` | Default. Warm graphite surface with a colorblind-checked palette: blue decode, violet prefill, aqua MTP, amber KV. |
+| `lil` | Default. Local Inference Lab brand colors: near-black ground, cool ink, and the lab's violet, blue and cyan accents on the charts. |
+| `graphite` | Warm graphite surface with a colorblind-checked palette: blue decode, violet prefill, aqua MTP, amber KV. |
 | `midnight` | Deep navy night sky with crisp electric accents. Calm and high-clarity for dark rooms. |
 | `nord` | Arctic and north-bluish: frosted cyans over polar-night slate, with muted aurora accents (Nord palette). |
 | `dracula` | Vivid neon pastels (cyan, purple, pink) on a dusky violet-gray (Dracula palette). |

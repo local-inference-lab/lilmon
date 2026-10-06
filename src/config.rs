@@ -119,7 +119,7 @@ impl Default for Config {
 impl Default for UiConfig {
     fn default() -> Self {
         UiConfig {
-            theme: "graphite".into(),
+            theme: "lil".into(),
             background: "theme".into(),
             window: None,
             peaks: vec!["1m".into(), "5m".into(), "15m".into()],
